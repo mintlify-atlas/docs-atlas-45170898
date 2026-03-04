@@ -1,0 +1,114 @@
+{
+  "projectType": "general",
+  "projectName": "Africa's Talking AI Integration Course",
+  "projectDescription": "Educational course demonstrating integration of Africa's Talking telecommunication APIs with Google Gemini AI for SMS, Voice, Airtime, SIM Swap, and USSD services.",
+  "theme": "palm",
+  "primaryColor": "#f38214",
+  "lightColor": "#27813c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "setup"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/webhooks",
+              "concepts/ai-integration"
+            ]
+          },
+          {
+            "group": "API Services",
+            "pages": [
+              "services/sms",
+              "services/voice",
+              "services/airtime",
+              "services/ussd",
+              "services/sim-swap"
+            ]
+          },
+          {
+            "group": "AI Integration",
+            "pages": [
+              "ai/gemini-setup",
+              "ai/utilities",
+              "ai/examples"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/environment-setup",
+              "guides/tunneling",
+              "guides/webhook-configuration",
+              "guides/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/sms-endpoints",
+              "api/voice-endpoints",
+              "api/airtime-endpoints",
+              "api/ussd-endpoints",
+              "api/simswap-endpoints"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/ai-utils",
+              "api/sms-utils",
+              "api/voice-utils",
+              "api/airtime-utils",
+              "api/simswap-utils"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "SMS integration with bulk and two-way messaging",
+    "Voice call capabilities with AI-powered responses",
+    "Airtime distribution and transaction validation",
+    "USSD interactive menu system",
+    "SIM swap detection and security",
+    "Google Gemini AI integration for intelligent responses",
+    "Webhook handling for asynchronous events",
+    "Flask-based REST API architecture"
+  ],
+  "publicApiSurface": [
+    "GET /api/sms/invoke-bulk-sms",
+    "GET /api/sms/invoke-twoway-sms",
+    "POST /api/sms/twoway",
+    "POST /api/sms/delivery-reports",
+    "GET /api/voice/invoke-call",
+    "POST /api/voice/instruct",
+    "POST /api/voice/events",
+    "GET /api/airtime/invoke-send-airtime",
+    "POST /api/airtime/validation",
+    "POST /api/airtime/status",
+    "POST /api/ussd/session",
+    "GET /api/sim-swap/invoke-check-simswap",
+    "POST /api/sim-swap/status",
+    "ask_gemini()",
+    "ask_gemini_as_xml()",
+    "ask_gemini_structured()"
+  ]
+}
