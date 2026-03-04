@@ -1,0 +1,525 @@
+---
+title: Voice Utilities
+description: Africa's Talking Voice API utilities for making calls
+icon: phone
+---
+
+## Overview
+
+The Voice utilities module provides functions to initiate voice calls using Africa's Talking Voice API. It handles call setup, validation, and error handling.
+
+### Environment Variables
+
+<ParamField path="AT_USERNAME" type="string" required>
+  Your Africa's Talking username (e.g., `sandbox` or your production username)
+</ParamField>
+
+<ParamField path="AT_API_KEY" type="string" required>
+  Your Africa's Talking API key
+</ParamField>
+
+<ParamField path="AT_VOICE_NUMBER" type="string" required>
+  Your Africa's Talking voice number or shortcode to use as caller ID
+</ParamField>
+
+---
+
+## make_call
+
+Initiate an outbound voice call to a phone number.
+
+```python
+def make_call(
+    phone_number: str, 
+    from_number: Optional[str] = AT_VOICE_NUMBER
+) -> Dict[str, Any]
+```
+
+### Parameters
+
+<ParamField path="phone_number" type="string" required>
+  The phone number to call in international format (e.g., `+254712345678`)
+</ParamField>
+
+<ParamField path="from_number" type="string" optional>
+  The caller ID or shortcode to display. Defaults to `AT_VOICE_NUMBER` from environment variables.
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="Dict[str, Any]">
+  Africa's Talking API response containing call session details
+  
+  ```python
+  {
+      "entries": [
+          {
+              "status": "Queued",
+              "phoneNumber": "+254712345678",
+              "sessionId": "ATVId_..."
+          }
+      ],
+      "errorMessage": "None"
+  }
+  ```
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.voice_utils import make_call
+
+# Make a call with default caller ID
+response = make_call("+254712345678")
+print(f"Call initiated: {response}")
+# 📞 Call initiated to +254712345678
+
+# Make a call with custom caller ID
+response = make_call(
+    phone_number="+254712345678",
+    from_number="+254700000000"
+)
+
+# Extract session ID for tracking
+session_id = response["entries"][0]["sessionId"]
+print(f"Session ID: {session_id}")
+```
+
+### Error Handling
+
+```python
+try:
+    response = make_call("+254712345678")
+    
+    # Check if call was queued successfully
+    if response["entries"][0]["status"] == "Queued":
+        print("Call queued successfully")
+except ValueError as e:
+    print(f"Validation error: {e}")
+    # Error: Invalid phone number format
+except Exception as e:
+    print(f"Call failed: {e}")
+    # Network errors, API errors, insufficient balance, etc.
+```
+
+### Route Handler Integration
+
+Example from `routes/voice.py:12-29`:
+
+```python
+@voice_bp.route("/invoke-call", methods=["GET"])
+def make_voice_call():
+    """
+    Initiate a voice call via query parameter.
+    E.g., /invoke-call?phone=254712345678
+    """
+    phone = "+" + request.args.get("phone", "").strip()
+
+    print(f"📞 Request to call: {phone}")
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = make_call(phone)
+        return {"message": f"Call initiated to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+---
+
+## Phone Number Validation
+
+The `make_call` function validates phone numbers before initiating calls:
+
+### Valid Formats
+
+```python
+# ✅ Valid formats
+"+254712345678"  # Kenya
+"+234803456789"  # Nigeria
+"+233240123456"  # Ghana
+"+256701234567"  # Uganda
+```
+
+### Invalid Formats
+
+```python
+# ❌ Invalid formats (will raise ValueError)
+"0712345678"     # Missing country code
+"254712345678"   # Missing '+' prefix
+"712345678"      # Missing country code and '+'
+```
+
+### Format Helper
+
+```python
+def format_phone_number(phone: str) -> str:
+    """Ensure phone number has '+' prefix."""
+    phone = phone.strip()
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    return phone
+
+# Usage
+phone = format_phone_number("254712345678")
+response = make_call(phone)
+```
+
+---
+
+## Voice Call Workflow
+
+### 1. Initiate Call
+
+```python
+from utils.voice_utils import make_call
+
+# Start the call
+response = make_call("+254712345678")
+session_id = response["entries"][0]["sessionId"]
+```
+
+### 2. Handle Call Instructions
+
+When the call is answered, Africa's Talking requests instructions from your callback URL:
+
+```python
+# From routes/voice.py:32-56
+@voice_bp.route("/instruct", methods=["POST"])
+def voice_instruct():
+    """
+    Provide call instructions when call is answered.
+    Africa's Talking calls this endpoint to get what to say/do.
+    """
+    session_id = request.values.get("sessionId")
+    caller_number = request.values.get("callerNumber")
+    destination_number = request.values.get("destinationNumber")
+
+    print(
+        f"📞 Call answered. Session: {session_id}, "
+        f"Caller: {caller_number}, Destination: {destination_number}"
+    )
+
+    # Return XML instructions
+    response = '<?xml version="1.0" encoding="UTF-8"?>'
+    response += "<Response>"
+    response += "<Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>"
+    response += "</Response>"
+
+    return Response(response, mimetype="text/plain")
+```
+
+### 3. Handle Call Events
+
+Monitor call status through event webhooks:
+
+```python
+# From routes/voice.py:59-87
+@voice_bp.route("/events", methods=["POST"])
+def voice_events():
+    """
+    Handle voice call events: started, ringing, answered, completed, failed.
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📢 Voice Event Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    session_id = payload.get("sessionId")
+    event_type = payload.get("eventType")
+    caller = payload.get("callerNumber")
+    hangup_cause = payload.get("hangupCause")
+
+    print(
+        f"➡️ Session {session_id} | EventType={event_type} | "
+        f"Caller={caller} | HangupCause={hangup_cause}"
+    )
+
+    return Response("OK", status=200)
+```
+
+---
+
+## Call Instructions (XML)
+
+The Voice API uses XML to control call flow. Here are common patterns:
+
+### Basic Speech
+
+```python
+def generate_speech_xml(text: str) -> str:
+    return f'''\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>{text}</Say>
+</Response>
+'''
+
+# Usage in route
+@voice_bp.route("/greet", methods=["POST"])
+def greet_caller():
+    caller = request.values.get("callerNumber")
+    xml = generate_speech_xml(f"Hello {caller}, welcome to our service!")
+    return Response(xml, mimetype="text/plain")
+```
+
+### Interactive Voice Response (IVR)
+
+```python
+@voice_bp.route("/menu", methods=["POST"])
+def voice_menu():
+    xml = '''\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <GetDigits timeout="30" finishOnKey="#" callbackUrl="https://your-domain.com/voice/handle-input">
+        <Say>Press 1 for sales, 2 for support, or 3 for billing</Say>
+    </GetDigits>
+</Response>
+'''
+    return Response(xml, mimetype="text/plain")
+
+@voice_bp.route("/handle-input", methods=["POST"])
+def handle_menu_input():
+    digits = request.values.get("dtmfDigits")
+    
+    if digits == "1":
+        text = "Connecting you to sales"
+    elif digits == "2":
+        text = "Connecting you to support"
+    elif digits == "3":
+        text = "Connecting you to billing"
+    else:
+        text = "Invalid selection. Goodbye."
+    
+    xml = generate_speech_xml(text)
+    return Response(xml, mimetype="text/plain")
+```
+
+### Record Audio
+
+```python
+@voice_bp.route("/record", methods=["POST"])
+def record_message():
+    xml = '''\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Please leave a message after the beep</Say>
+    <Record finishOnKey="#" maxLength="60" 
+            callbackUrl="https://your-domain.com/voice/recording-complete"/>
+</Response>
+'''
+    return Response(xml, mimetype="text/plain")
+
+@voice_bp.route("/recording-complete", methods=["POST"])
+def handle_recording():
+    recording_url = request.values.get("recordingUrl")
+    print(f"Recording available at: {recording_url}")
+    
+    xml = generate_speech_xml("Thank you for your message. Goodbye.")
+    return Response(xml, mimetype="text/plain")
+```
+
+### Conference Call
+
+```python
+@voice_bp.route("/conference", methods=["POST"])
+def join_conference():
+    xml = '''\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Joining the conference</Say>
+    <Dial conferenceRoom="MyConference" 
+          startConferenceOnEnter="true" 
+          endConferenceOnExit="false"/>
+</Response>
+'''
+    return Response(xml, mimetype="text/plain")
+```
+
+---
+
+## AI-Powered Voice Responses
+
+Integrate with Gemini AI for dynamic responses:
+
+```python
+from utils.voice_utils import make_call
+from utils.ai_utils import ask_gemini_as_xml
+
+@voice_bp.route("/ai-assistant", methods=["POST"])
+def ai_voice_assistant():
+    """Use Gemini to generate dynamic voice responses."""
+    caller_number = request.values.get("callerNumber")
+    dtmf_digits = request.values.get("dtmfDigits", "")
+    
+    # Generate AI response based on user input
+    if dtmf_digits == "1":
+        prompt = "Explain our business hours in one sentence"
+    elif dtmf_digits == "2":
+        prompt = "Provide our customer support contact information"
+    else:
+        prompt = "Give a professional greeting to a caller"
+    
+    # Get XML response from Gemini
+    xml = ask_gemini_as_xml(prompt, root_tag="Response")
+    return Response(xml, mimetype="text/plain")
+```
+
+---
+
+## Call Events Reference
+
+Africa's Talking sends various events during a call lifecycle:
+
+| Event Type | Description | When Fired |
+|------------|-------------|------------|
+| `SessionInitiated` | Call session created | Call initiated |
+| `Ringing` | Phone is ringing | Before answer |
+| `Answered` | Call was answered | Recipient picks up |
+| `TransferInitiated` | Call being transferred | During transfer |
+| `TransferCompleted` | Transfer completed | After transfer |
+| `Completed` | Call ended normally | Call hangup |
+| `Cancelled` | Call was cancelled | Before answer |
+| `NotAnswered` | Call not answered | Timeout/reject |
+| `Failed` | Call failed | Network error |
+
+### Event Payload Example
+
+```python
+# Typical event payload
+{
+    "sessionId": "ATVId_abc123",
+    "eventType": "Answered",
+    "callerNumber": "+254712345678",
+    "destinationNumber": "+254700000000",
+    "direction": "Outbound",
+    "isActive": "1",
+    "durationInSeconds": "45",
+    "currencyCode": "KES",
+    "amount": "2.50",
+    "hangupCause": "NORMAL_CLEARING"
+}
+```
+
+---
+
+## Error Handling Best Practices
+
+### 1. Validate Before Calling
+
+```python
+def safe_make_call(phone: str) -> dict:
+    # Validate phone number
+    if not phone or not phone.startswith("+"):
+        raise ValueError(f"Invalid phone number: {phone}")
+    
+    # Check minimum length
+    if len(phone) < 10:
+        raise ValueError(f"Phone number too short: {phone}")
+    
+    try:
+        return make_call(phone)
+    except Exception as e:
+        print(f"Failed to initiate call to {phone}: {e}")
+        raise
+```
+
+### 2. Handle API Failures
+
+```python
+import time
+
+def make_call_with_retry(phone: str, retries: int = 3) -> dict:
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            return make_call(phone)
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff
+                print(f"Call failed, retrying in {wait_time}s...")
+                time.sleep(wait_time)
+    
+    raise RuntimeError(f"Failed after {retries} attempts: {last_error}")
+```
+
+### 3. Monitor Call Status
+
+```python
+# Store session IDs for tracking
+call_sessions = {}
+
+def initiate_tracked_call(phone: str, context: dict) -> str:
+    response = make_call(phone)
+    session_id = response["entries"][0]["sessionId"]
+    
+    # Store session context
+    call_sessions[session_id] = {
+        "phone": phone,
+        "status": "Queued",
+        "initiated_at": time.time(),
+        **context
+    }
+    
+    return session_id
+
+# Update in event handler
+@voice_bp.route("/events", methods=["POST"])
+def track_call_events():
+    session_id = request.values.get("sessionId")
+    event_type = request.values.get("eventType")
+    
+    if session_id in call_sessions:
+        call_sessions[session_id]["status"] = event_type
+        call_sessions[session_id]["last_event"] = time.time()
+    
+    return "OK", 200
+```
+
+---
+
+## Cost Management
+
+### Track Call Costs
+
+```python
+@voice_bp.route("/events", methods=["POST"])
+def track_costs():
+    payload = request.values.to_dict()
+    
+    if payload.get("eventType") == "Completed":
+        session_id = payload.get("sessionId")
+        amount = payload.get("amount")
+        currency = payload.get("currencyCode")
+        duration = payload.get("durationInSeconds")
+        
+        print(f"Call {session_id} cost: {currency} {amount} ({duration}s)")
+        
+        # Store in database for billing
+        # save_call_cost(session_id, amount, currency, duration)
+    
+    return "OK", 200
+```
+
+### Set Call Duration Limits
+
+```python
+@voice_bp.route("/limited-call", methods=["POST"])
+def limited_duration_call():
+    """Limit call to 60 seconds to control costs."""
+    xml = '''\
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>This call will end in 60 seconds</Say>
+    <GetDigits timeout="60" finishOnKey="#">
+        <Say>Please enter your account number</Say>
+    </GetDigits>
+    <Say>Time limit reached. Goodbye.</Say>
+</Response>
+'''
+    return Response(xml, mimetype="text/plain")
+```

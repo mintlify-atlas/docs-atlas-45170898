@@ -1,0 +1,243 @@
+---
+title: 'Airtime Endpoints'
+description: 'Complete API reference for Airtime service endpoints'
+---
+
+## Overview
+
+The Airtime service provides endpoints for sending airtime to phone numbers and handling validation and status callbacks through Africa's Talking Airtime API.
+
+---
+
+## GET /airtime/
+
+Check Airtime service status.
+
+### Response
+
+<ResponseField name="service" type="string">
+  Service name ("airtime")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/airtime/
+```
+
+### Example Response
+
+```json
+{
+  "service": "airtime",
+  "status": "ready"
+}
+```
+
+---
+
+## GET /airtime/invoke-send-airtime
+
+Send airtime to a phone number.
+
+### Query Parameters
+
+<ParamField query="phone" type="string" required>
+  Phone number to send airtime to (without the + prefix, e.g., 254711XXXYYY)
+</ParamField>
+
+<ParamField query="amount" type="string" default="10">
+  Amount of airtime to send (must be a positive number)
+</ParamField>
+
+<ParamField query="currency" type="string" default="KES">
+  Currency code (e.g., KES, USD, UGX)
+</ParamField>
+
+<ParamField query="idempotencyKey" type="string" default="ABCDEF">
+  Idempotency key to prevent duplicate transactions
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Success message indicating airtime was sent
+</ResponseField>
+
+<ResponseField name="response" type="object">
+  Response object from Africa's Talking API
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET "http://localhost:5000/airtime/invoke-send-airtime?phone=254711XXXYYY&amount=100&currency=KES"
+```
+
+### Example Response
+
+```json
+{
+  "message": "Airtime sent to +254711XXXYYY",
+  "response": {
+    "errorMessage": "None",
+    "numSent": 1,
+    "totalAmount": "KES 100.0000",
+    "totalDiscount": "KES 0.6000",
+    "responses": [
+      {
+        "phoneNumber": "+254711XXXYYY",
+        "errorMessage": "None",
+        "amount": "KES 100.0000",
+        "status": "Sent",
+        "requestId": "ATQid_SampleTxnId123",
+        "discount": "KES 0.6000"
+      }
+    ]
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing 'phone' query parameter, invalid amount (must be positive number)
+- **500** - Internal server error or Africa's Talking API error
+
+---
+
+## POST /airtime/validation
+
+Validation callback webhook for airtime transactions.
+
+### Request Body (JSON)
+
+<ParamField body="transactionId" type="string" required>
+  Unique transaction ID
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number receiving airtime
+</ParamField>
+
+<ParamField body="sourceIpAddress" type="string" required>
+  Source IP address of the transaction
+</ParamField>
+
+<ParamField body="currencyCode" type="string" required>
+  Currency code (e.g., KES, USD)
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Amount of airtime being sent
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Validation status: "Validated" or "Failed"
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/airtime/validation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionId": "SomeTransactionID",
+    "phoneNumber": "+254711XXXYYY",
+    "sourceIpAddress": "127.12.32.24",
+    "currencyCode": "KES",
+    "amount": 500.00
+  }'
+```
+
+### Example Response
+
+```json
+{
+  "status": "Validated"
+}
+```
+
+### Error Codes
+
+- **400** - Missing required fields
+
+---
+
+## POST /airtime/status
+
+Status callback webhook for airtime delivery updates.
+
+### Request Body (JSON)
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number that received airtime
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Description of the delivery status
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Delivery status (e.g., "Success", "Failed")
+</ParamField>
+
+<ParamField body="requestId" type="string" required>
+  Request ID from the original airtime send request
+</ParamField>
+
+<ParamField body="discount" type="string" required>
+  Discount amount applied (e.g., "KES 0.6000")
+</ParamField>
+
+<ParamField body="value" type="string" required>
+  Total value sent (e.g., "KES 100.0000")
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/airtime/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phoneNumber": "+254711XXXYYY",
+    "description": "Airtime Delivered Successfully",
+    "status": "Success",
+    "requestId": "ATQid_SampleTxnId123",
+    "discount": "KES 0.6000",
+    "value": "KES 100.0000"
+  }'
+```
+
+### Example Response
+
+```
+OK
+```
+
+### Status Values
+
+Common status values:
+
+- **Success** - Airtime delivered successfully
+- **Failed** - Airtime delivery failed
+- **Sent** - Airtime has been sent to the network
+- **Queued** - Transaction is queued for processing
+- **InvalidRequest** - Request was invalid
+- **NotSupported** - Operation not supported for this number
+- **InsufficientBalance** - Insufficient balance in your account
+- **UserInInvalidState** - User account is in invalid state
+- **UserNotFound** - Phone number not found on network
+
+### Error Codes
+
+- **400** - Missing required fields in request body

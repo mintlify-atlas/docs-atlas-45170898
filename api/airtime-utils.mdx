@@ -1,0 +1,594 @@
+---
+title: Airtime Utilities
+description: Africa's Talking Airtime API utilities for sending mobile money
+icon: money-bill
+---
+
+## Overview
+
+The Airtime utilities module provides functions to send airtime to phone numbers using Africa's Talking Airtime API. It supports idempotency for transaction safety.
+
+### Environment Variables
+
+<ParamField path="AT_USERNAME" type="string" required>
+  Your Africa's Talking username (e.g., `sandbox` or your production username)
+</ParamField>
+
+<ParamField path="AT_API_KEY" type="string" required>
+  Your Africa's Talking API key
+</ParamField>
+
+---
+
+## send_airtime
+
+Send airtime to a phone number with optional idempotency key for transaction safety.
+
+```python
+def send_airtime(
+    phone_number: str, 
+    amount: float, 
+    currency: str = "KES", 
+    idempotencyKey: str = None
+) -> Dict[str, Any]
+```
+
+### Parameters
+
+<ParamField path="phone_number" type="string" required>
+  The recipient's phone number in international format (e.g., `+254712345678`)
+</ParamField>
+
+<ParamField path="amount" type="float" required>
+  The amount of airtime to send (e.g., `10.0`, `50.5`, `100.0`)
+</ParamField>
+
+<ParamField path="currency" type="string" default="KES">
+  The currency code for the airtime. Common values:
+  - `KES` - Kenyan Shilling
+  - `NGN` - Nigerian Naira
+  - `TZS` - Tanzanian Shilling
+  - `UGX` - Ugandan Shilling
+</ParamField>
+
+<ParamField path="idempotencyKey" type="string" optional>
+  Unique identifier to prevent duplicate transactions. If the same key is used twice, only the first request is processed.
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="Dict[str, Any]">
+  Africa's Talking API response containing transaction status and details
+  
+  ```python
+  {
+      "numSent": 1,
+      "totalAmount": "KES 10.00",
+      "totalDiscount": "KES 0.20",
+      "responses": [
+          {
+              "phoneNumber": "+254712345678",
+              "errorMessage": "None",
+              "amount": "KES 10.00",
+              "status": "Sent",
+              "requestId": "ATQid_...",
+              "discount": "KES 0.20"
+          }
+      ]
+  }
+  ```
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.airtime_utils import send_airtime
+
+# Send airtime with default currency (KES)
+response = send_airtime(
+    phone_number="+254712345678",
+    amount=50.0
+)
+
+print(response)
+# {
+#     "numSent": 1,
+#     "totalAmount": "KES 50.00",
+#     "responses": [...]
+# }
+
+# Send with custom currency
+response = send_airtime(
+    phone_number="+234803456789",
+    amount=100.0,
+    currency="NGN"
+)
+
+# Send with idempotency key (prevents duplicates)
+response = send_airtime(
+    phone_number="+254712345678",
+    amount=20.0,
+    currency="KES",
+    idempotencyKey="unique-transaction-id-12345"
+)
+```
+
+### Route Handler Integration
+
+Example from `routes/airtime.py:23-45`:
+
+```python
+@airtime_bp.route("/invoke-send-airtime", methods=["GET"])
+def invoke_send_airtime():
+    """
+    Send airtime via query parameters.
+    Example: /invoke-send-airtime?phone=254712345678&amount=100&currency=KES
+    """
+    phone = "+" + request.args.get("phone", "").strip()
+    amount = request.args.get("amount", "10").strip()
+    currency = request.args.get("currency", "KES").strip()
+    idempotencyKey = request.args.get("idempotencyKey", "ABCDEF").strip()
+
+    print(f"📲 Request to send airtime to: {phone} with amount: {amount}")
+    
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        amount_value = float(amount)
+        if amount_value <= 0:
+            return {"error": "'amount' must be a positive number"}, 400
+    except ValueError:
+        return {"error": "'amount' must be a valid number"}, 400
+
+    try:
+        response = send_airtime(phone, amount_value, currency, idempotencyKey or None)
+        return {"message": f"Airtime sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+---
+
+## Phone Number Validation
+
+The `send_airtime` function validates phone numbers:
+
+### Valid Formats
+
+```python
+# ✅ Valid formats
+"+254712345678"  # Kenya
+"+234803456789"  # Nigeria
+"+255712345678"  # Tanzania
+"+256701234567"  # Uganda
+```
+
+### Invalid Formats
+
+```python
+# ❌ Invalid formats (will raise ValueError)
+"0712345678"     # Missing country code
+"254712345678"   # Missing '+' prefix
+"712345678"      # Missing country code and '+'
+```
+
+### Validation Helper
+
+```python
+def validate_airtime_request(phone: str, amount: float) -> tuple[str, str]:
+    """Validate phone number and amount."""
+    # Format phone number
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    
+    # Validate phone format
+    if not phone.startswith("+"):
+        raise ValueError(f"Invalid phone format: {phone}")
+    
+    # Validate amount
+    if amount <= 0:
+        raise ValueError("Amount must be positive")
+    
+    if amount > 10000:  # Set maximum limit
+        raise ValueError("Amount exceeds maximum limit")
+    
+    return phone, None
+
+# Usage
+try:
+    phone, error = validate_airtime_request("254712345678", 50.0)
+    if not error:
+        response = send_airtime(phone, 50.0)
+except ValueError as e:
+    print(f"Validation error: {e}")
+```
+
+---
+
+## Idempotency
+
+Idempotency keys prevent duplicate airtime transactions:
+
+### Why Use Idempotency Keys?
+
+- **Network Retries**: Prevents duplicate sends if request is retried
+- **User Double-Clicks**: Protects against accidental multiple submissions
+- **System Failures**: Safe to retry failed requests without creating duplicates
+
+### Generating Idempotency Keys
+
+```python
+import uuid
+import hashlib
+from datetime import datetime
+
+# Method 1: UUID (recommended)
+def generate_idempotency_key_uuid() -> str:
+    return str(uuid.uuid4())
+
+# Method 2: Hash of transaction details
+def generate_idempotency_key_hash(phone: str, amount: float) -> str:
+    timestamp = datetime.now().isoformat()
+    data = f"{phone}:{amount}:{timestamp}"
+    return hashlib.sha256(data.encode()).hexdigest()
+
+# Method 3: User ID + Timestamp
+def generate_idempotency_key_user(user_id: str) -> str:
+    timestamp = int(datetime.now().timestamp() * 1000)
+    return f"{user_id}-{timestamp}"
+
+# Usage
+idempotency_key = generate_idempotency_key_uuid()
+response = send_airtime(
+    phone_number="+254712345678",
+    amount=50.0,
+    idempotencyKey=idempotency_key
+)
+```
+
+### Idempotency in Practice
+
+```python
+# Store transaction attempts in database
+transaction_cache = {}
+
+def send_airtime_safe(phone: str, amount: float, user_id: str) -> dict:
+    # Generate idempotency key
+    idempotency_key = f"{user_id}-{phone}-{amount}"
+    
+    # Check if already processed
+    if idempotency_key in transaction_cache:
+        print(f"Transaction already processed: {idempotency_key}")
+        return transaction_cache[idempotency_key]
+    
+    try:
+        # Send airtime
+        response = send_airtime(
+            phone_number=phone,
+            amount=amount,
+            idempotencyKey=idempotency_key
+        )
+        
+        # Cache successful transaction
+        transaction_cache[idempotency_key] = response
+        return response
+        
+    except Exception as e:
+        print(f"Airtime send failed: {e}")
+        raise
+```
+
+---
+
+## Error Handling
+
+### Common Errors
+
+```python
+try:
+    response = send_airtime("+254712345678", 50.0)
+except ValueError as e:
+    # Phone number validation failed
+    print(f"Validation error: {e}")
+except RuntimeError as e:
+    # API call failed
+    error_message = str(e)
+    
+    if "InsufficientBalance" in error_message:
+        print("Insufficient balance in Africa's Talking account")
+    elif "InvalidPhoneNumber" in error_message:
+        print("Phone number is not valid")
+    elif "UnsupportedCountry" in error_message:
+        print("Country not supported for airtime")
+    else:
+        print(f"Airtime send failed: {e}")
+except Exception as e:
+    # Unexpected error
+    print(f"Unexpected error: {e}")
+```
+
+### Retry Logic
+
+```python
+import time
+
+def send_airtime_with_retry(
+    phone: str, 
+    amount: float, 
+    retries: int = 3
+) -> dict:
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            return send_airtime(phone, amount)
+        except RuntimeError as e:
+            last_error = e
+            
+            # Don't retry on validation errors
+            if "Invalid" in str(e):
+                raise
+            
+            if attempt < retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"Retry {attempt + 1}/{retries} in {wait_time}s...")
+                time.sleep(wait_time)
+    
+    raise RuntimeError(f"Failed after {retries} attempts: {last_error}")
+```
+
+---
+
+## Webhooks
+
+### Validation Webhook
+
+Validate airtime transactions before processing (from `routes/airtime.py:48-75`):
+
+```python
+@airtime_bp.route("/validation", methods=["POST"])
+def airtime_validation():
+    """
+    Validate an airtime transaction request.
+    
+    Payload:
+    {
+        "transactionId": "SomeTransactionID",
+        "phoneNumber": "+254711XXXYYY",
+        "sourceIpAddress": "127.12.32.24",
+        "currencyCode": "KES",
+        "amount": 500.00
+    }
+    """
+    data = request.get_json(force=True)
+
+    transaction_id = data.get("transactionId")
+    phone_number = data.get("phoneNumber")
+    source_ip = data.get("sourceIpAddress")
+    currency = data.get("currencyCode")
+    amount = data.get("amount")
+
+    # Implement your validation logic
+    # - Check if user has sufficient balance
+    # - Verify phone number is in allowed list
+    # - Check transaction limits
+    # - Validate source IP
+    
+    if transaction_id and phone_number and currency and amount:
+        # Additional checks
+        if amount > 1000:
+            return jsonify({"status": "Failed"})
+        
+        status = "Validated"
+    else:
+        status = "Failed"
+
+    return jsonify({"status": status})
+```
+
+### Status Webhook
+
+Receive airtime delivery status updates (from `routes/airtime.py:78-108`):
+
+```python
+@airtime_bp.route("/status", methods=["POST"])
+def airtime_status():
+    """
+    Handle airtime delivery status callbacks.
+    
+    Payload:
+    {
+       "phoneNumber": "+254711XXXYYY",
+       "description": "Airtime Delivered Successfully",
+       "status": "Success",
+       "requestId": "ATQid_SampleTxnId123",
+       "discount": "KES 0.6000",
+       "value": "KES 100.0000"
+    }
+    """
+    data = request.get_json(force=True)
+
+    phone_number = data.get("phoneNumber")
+    description = data.get("description")
+    status = data.get("status")
+    request_id = data.get("requestId")
+    discount = data.get("discount")
+    value = data.get("value")
+
+    # Log status update
+    print(f"📲 Airtime status update for {phone_number}: {status} ({description})")
+    
+    # Update database
+    if status == "Success":
+        print(f"✅ Successfully delivered {value} to {phone_number}")
+        # update_transaction_status(request_id, "completed")
+    else:
+        print(f"❌ Airtime delivery failed: {description}")
+        # update_transaction_status(request_id, "failed")
+        # possibly initiate refund
+
+    return "OK", 200
+```
+
+---
+
+## Status Codes
+
+Common airtime transaction statuses:
+
+| Status | Description | Action Required |
+|--------|-------------|----------------|
+| `Sent` | Airtime queued for delivery | Monitor status webhook |
+| `Success` | Delivered successfully | Mark as completed |
+| `Failed` | Delivery failed | Check error message |
+| `InsufficientBalance` | Account has no funds | Top up account |
+| `InvalidPhoneNumber` | Phone number invalid | Validate input |
+| `UnsupportedCountry` | Country not supported | Check supported countries |
+| `NetworkError` | Network connectivity issue | Retry transaction |
+| `DuplicateRequest` | Idempotency key reused | Use original response |
+
+### Checking Transaction Status
+
+```python
+def check_airtime_status(response: dict) -> str:
+    """Extract and check airtime transaction status."""
+    if not response.get("responses"):
+        return "Unknown"
+    
+    first_response = response["responses"][0]
+    status = first_response.get("status")
+    error = first_response.get("errorMessage")
+    
+    if status == "Sent":
+        return "Queued for delivery"
+    elif error and error != "None":
+        return f"Failed: {error}"
+    else:
+        return status
+
+# Usage
+response = send_airtime("+254712345678", 50.0)
+status = check_airtime_status(response)
+print(f"Transaction status: {status}")
+```
+
+---
+
+## Best Practices
+
+### 1. Always Use Idempotency Keys
+
+```python
+# ✅ Good: Use unique idempotency key
+response = send_airtime(
+    phone_number="+254712345678",
+    amount=50.0,
+    idempotencyKey=str(uuid.uuid4())
+)
+
+# ❌ Bad: No idempotency key (risk of duplicates)
+response = send_airtime(
+    phone_number="+254712345678",
+    amount=50.0
+)
+```
+
+### 2. Validate Amounts
+
+```python
+def validate_amount(amount: float, min_amount: float = 5.0, max_amount: float = 1000.0):
+    if amount < min_amount:
+        raise ValueError(f"Amount must be at least {min_amount}")
+    if amount > max_amount:
+        raise ValueError(f"Amount cannot exceed {max_amount}")
+    return True
+
+# Usage
+try:
+    validate_amount(50.0)
+    response = send_airtime("+254712345678", 50.0)
+except ValueError as e:
+    print(f"Validation failed: {e}")
+```
+
+### 3. Implement Transaction Logging
+
+```python
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+def send_airtime_logged(phone: str, amount: float, user_id: str) -> dict:
+    idempotency_key = f"{user_id}-{datetime.now().timestamp()}"
+    
+    logger.info(f"Initiating airtime: {phone} = {amount} (key: {idempotency_key})")
+    
+    try:
+        response = send_airtime(
+            phone_number=phone,
+            amount=amount,
+            idempotencyKey=idempotency_key
+        )
+        
+        logger.info(f"Airtime sent successfully: {response}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Airtime failed: {e}", exc_info=True)
+        raise
+```
+
+### 4. Set Up Monitoring
+
+```python
+# Track success rate
+airtime_stats = {
+    "total": 0,
+    "success": 0,
+    "failed": 0
+}
+
+def send_airtime_monitored(phone: str, amount: float) -> dict:
+    airtime_stats["total"] += 1
+    
+    try:
+        response = send_airtime(phone, amount)
+        airtime_stats["success"] += 1
+        return response
+    except Exception as e:
+        airtime_stats["failed"] += 1
+        raise
+
+def get_success_rate() -> float:
+    if airtime_stats["total"] == 0:
+        return 0.0
+    return (airtime_stats["success"] / airtime_stats["total"]) * 100
+
+# Check success rate
+print(f"Success rate: {get_success_rate():.2f}%")
+```
+
+### 5. Handle Currency Correctly
+
+```python
+# Map country codes to currencies
+COUNTRY_CURRENCIES = {
+    "254": "KES",  # Kenya
+    "234": "NGN",  # Nigeria
+    "255": "TZS",  # Tanzania
+    "256": "UGX",  # Uganda
+}
+
+def auto_detect_currency(phone: str) -> str:
+    """Auto-detect currency from phone country code."""
+    # Extract country code
+    country_code = phone[1:4]  # +254... -> 254
+    return COUNTRY_CURRENCIES.get(country_code, "KES")
+
+# Usage
+phone = "+254712345678"
+currency = auto_detect_currency(phone)
+response = send_airtime(phone, 50.0, currency=currency)
+```

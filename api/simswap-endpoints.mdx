@@ -1,0 +1,175 @@
+---
+title: 'SIM Swap Endpoints'
+description: 'Complete API reference for SIM Swap service endpoints'
+---
+
+## Overview
+
+The SIM Swap service provides endpoints for checking if a phone number has recently undergone a SIM swap and receiving status callbacks through Africa's Talking SIM Swap API.
+
+---
+
+## GET /sim-swap/
+
+Check SIM Swap service status.
+
+### Response
+
+<ResponseField name="service" type="string">
+  Service name ("sim-swap")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/sim-swap/
+```
+
+### Example Response
+
+```json
+{
+  "service": "sim-swap",
+  "status": "ready"
+}
+```
+
+---
+
+## GET /sim-swap/invoke-check-simswap
+
+Check if a phone number has recently undergone a SIM swap.
+
+### Query Parameters
+
+<ParamField query="phone" type="string" required>
+  Phone number to check for SIM swap (without the + prefix, e.g., 254711XXXYYY)
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Success message indicating SIM swap check was initiated
+</ResponseField>
+
+<ResponseField name="response" type="object">
+  Response object from Africa's Talking API
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET "http://localhost:5000/sim-swap/invoke-check-simswap?phone=254711XXXYYY"
+```
+
+### Example Response
+
+```json
+{
+  "message": "Sim swap check invoked for +254711XXXYYY",
+  "response": {
+    "status": "Queued",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing 'phone' query parameter
+- **500** - Internal server error or Africa's Talking API error
+
+---
+
+## POST /sim-swap/status
+
+Webhook callback for SIM swap status updates from Africa's Talking.
+
+### Request Body (JSON)
+
+<ParamField body="status" type="string" required>
+  SIM swap status: "Swapped" or "NotSwapped"
+</ParamField>
+
+<ParamField body="lastSimSwapDate" type="string" required>
+  Date of last SIM swap in DD-MM-YYYY format ("01-01-1900" if never swapped)
+</ParamField>
+
+<ParamField body="providerRefId" type="string" required>
+  Provider reference ID
+</ParamField>
+
+<ParamField body="requestId" type="string" required>
+  Request ID from the original SIM swap check request
+</ParamField>
+
+<ParamField body="transactionId" type="string" required>
+  Unique transaction ID
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request (Swapped)
+
+```bash
+curl -X POST http://localhost:5000/sim-swap/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "Swapped",
+    "lastSimSwapDate": "15-08-2025",
+    "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+  }'
+```
+
+### Example Request (Not Swapped)
+
+```bash
+curl -X POST http://localhost:5000/sim-swap/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "NotSwapped",
+    "lastSimSwapDate": "01-01-1900",
+    "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+  }'
+```
+
+### Example Response
+
+```
+OK
+```
+
+### Status Values
+
+- **Swapped** - SIM card has been swapped recently (within the detection window)
+- **NotSwapped** - No recent SIM swap detected
+- **Failed** - Check failed (may include error details)
+- **Pending** - Check is still in progress
+
+### Use Cases
+
+SIM swap detection is commonly used for:
+
+- **Fraud Prevention** - Detect potential account takeover attempts
+- **Additional Authentication** - Require extra verification if SIM was recently swapped
+- **Transaction Security** - Block high-value transactions after recent SIM swaps
+- **Account Recovery** - Verify legitimate SIM swaps during account recovery
+
+### Best Practices
+
+1. **Set appropriate timeframes** - Define what "recent" means for your use case (e.g., 24 hours, 7 days)
+2. **Combine with other signals** - Use SIM swap data alongside other fraud detection methods
+3. **Handle edge cases** - Account for users who legitimately changed their SIM card
+4. **Store webhook data** - Log all status callbacks for audit and analysis
+5. **Implement retry logic** - Handle network failures gracefully

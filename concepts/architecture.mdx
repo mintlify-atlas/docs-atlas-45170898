@@ -1,0 +1,283 @@
+---
+title: 'Application Architecture'
+description: 'Understanding the Flask application structure and auto-discovery route registration system'
+icon: 'sitemap'
+---
+
+## Overview
+
+This Africa's Talking integration uses a Flask-based architecture with a modular blueprint system and automatic route discovery. The application is designed to be scalable, maintainable, and easy to extend with new services.
+
+## Application Structure
+
+The core application follows a clean separation of concerns:
+
+```
+source/
+├── app.py                 # Application entry point
+├── routes/
+│   ├── __init__.py       # Auto-discovery registration
+│   ├── sms.py            # SMS service routes
+│   ├── voice.py          # Voice service routes
+│   ├── ussd.py           # USSD service routes
+│   ├── airtime.py        # Airtime service routes
+│   └── sim-swap.py       # SIM swap service routes
+└── utils/
+    ├── ai_utils.py       # Gemini AI integration
+    ├── sms_utils.py      # SMS helper functions
+    ├── voice_utils.py    # Voice helper functions
+    └── ...
+```
+
+## Flask Application Entry Point
+
+The main application in `app.py` is minimal and focused:
+
+```python app.py
+from flask import Flask
+from routes import register_routes
+
+import os
+from dotenv import load_dotenv
+
+# Load .env file into environment
+load_dotenv()
+
+PORT = int(os.getenv("PORT", 9000))  # default 9000 if not set
+DEBUG = os.getenv("FLASK_ENV", "production") == "development"
+
+app = Flask(__name__)
+register_routes(app)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=PORT, debug=DEBUG)
+```
+
+<Note>
+The application delegates all route registration to the `register_routes()` function, keeping the main file clean and focused on configuration.
+</Note>
+
+## Auto-Discovery Route Registration
+
+The most innovative aspect of this architecture is the **automatic route discovery** pattern implemented in `routes/__init__.py`. This eliminates the need to manually import and register each blueprint.
+
+### How It Works
+
+```python routes/__init__.py
+import os
+import importlib
+from flask import Blueprint
+
+def register_routes(app):
+    routes_dir = os.path.dirname(__file__)
+
+    for filename in os.listdir(routes_dir):
+        if filename.startswith("__") or not filename.endswith(".py"):
+            continue
+
+        module_name = f"routes.{filename[:-3]}"
+        module = importlib.import_module(module_name)
+
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            if isinstance(attr, Blueprint):
+                prefix = f"/api/{attr.name}"
+                app.register_blueprint(attr, url_prefix=prefix)
+                print(f"✅ Registered {attr.name} at {prefix}")
+
+    @app.route("/", methods=["GET"])
+    def index():
+        return "Welcome to the API service. Available endpoints: " + ", ".join(
+            [f"/api/{bp.name}" for bp in app.blueprints.values()]
+        )
+```
+
+### Registration Process
+
+<Steps>
+  <Step title="Scan Routes Directory">
+    The function scans all Python files in the `routes/` directory, excluding files starting with `__` (like `__init__.py`).
+  </Step>
+  
+  <Step title="Dynamic Import">
+    Each route module is dynamically imported using `importlib.import_module()`.
+  </Step>
+  
+  <Step title="Find Blueprints">
+    The function inspects each module's attributes using `dir()` and identifies Flask Blueprint instances using `isinstance(attr, Blueprint)`.
+  </Step>
+  
+  <Step title="Register with Prefix">
+    Each blueprint is registered with a URL prefix of `/api/{blueprint_name}`, creating a consistent API structure.
+  </Step>
+  
+  <Step title="Confirmation">
+    A confirmation message is printed to the console: `✅ Registered {name} at /api/{name}`
+  </Step>
+</Steps>
+
+### Benefits of Auto-Discovery
+
+<CardGroup cols={2}>
+  <Card title="Zero Configuration" icon="wand-magic-sparkles">
+    Add a new service by simply creating a file with a Blueprint - no manual registration needed.
+  </Card>
+  
+  <Card title="Consistent URL Structure" icon="route">
+    All services automatically follow the `/api/{service}` pattern.
+  </Card>
+  
+  <Card title="Reduced Boilerplate" icon="code">
+    Eliminates repetitive import statements and registration calls.
+  </Card>
+  
+  <Card title="Easy Testing" icon="vial">
+    New services are immediately available without modifying the main app.
+  </Card>
+</CardGroup>
+
+## Blueprint Pattern
+
+Each service is implemented as a Flask Blueprint. Here's the standard pattern:
+
+```python routes/sms.py
+from flask import Blueprint, jsonify, request, Response
+from utils.sms_utils import send_bulk_sms, send_twoway_sms
+
+sms_bp = Blueprint("sms", __name__)
+
+@sms_bp.route("/", methods=["GET"])
+def get_sms_status():
+    return jsonify({"service": "sms", "status": "ready"})
+
+@sms_bp.route("/invoke-bulk-sms", methods=["GET"])
+def invoke_bulk_sms():
+    # Implementation...
+    pass
+```
+
+<Info>
+**Blueprint Naming Convention**: The blueprint variable should be named `{service}_bp` where `{service}` matches the filename. The blueprint name becomes the URL prefix.
+</Info>
+
+### URL Structure
+
+Given a blueprint named `sms_bp` in `routes/sms.py`:
+
+- Blueprint name: `sms`
+- Base URL: `/api/sms`
+- Route `/`: Full path becomes `/api/sms/`
+- Route `/invoke-bulk-sms`: Full path becomes `/api/sms/invoke-bulk-sms`
+
+## Configuration Management
+
+The application uses environment variables for configuration:
+
+```python
+# Application Configuration
+PORT = int(os.getenv("PORT", 9000))
+DEBUG = os.getenv("FLASK_ENV", "production") == "development"
+
+# Africa's Talking Configuration (in utils)
+AT_USERNAME = os.getenv("AT_USERNAME")
+AT_API_KEY = os.getenv("AT_API_KEY")
+AT_SHORTCODE = os.getenv("AT_SHORTCODE")
+AT_VOICE_NUMBER = os.getenv("AT_VOICE_NUMBER")
+
+# Gemini AI Configuration (in utils/ai_utils.py)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DEFAULT_MODEL = os.getenv("MODEL_ID", "gemini-2.5-flash")
+```
+
+<Warning>
+Each utility module validates required environment variables on import and raises `EnvironmentError` or `ValueError` if critical credentials are missing.
+</Warning>
+
+## Service Layer Pattern
+
+The application separates concerns between routes (HTTP handling) and utils (business logic):
+
+```python
+# routes/sms.py - HTTP handling
+@sms_bp.route("/invoke-bulk-sms", methods=["GET"])
+def invoke_bulk_sms():
+    phone = "+" + request.args.get("phone", "").strip()
+    message = request.args.get("message", "Hello from Africa's Talking!").strip()
+    
+    try:
+        response = send_bulk_sms(message, [phone])  # Call to utils
+        return {"message": f"SMS sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+# utils/sms_utils.py - Business logic
+def send_bulk_sms(message: str, recipients: List[str]) -> Dict[str, Any]:
+    if not recipients:
+        raise ValueError("Recipients list cannot be empty")
+    
+    try:
+        response = _sms.send(message, recipients)
+        print(f"📩 Bulk SMS sent to {len(recipients)} recipients")
+        return response
+    except Exception as e:
+        print(f"❌ Bulk SMS failed: {e}")
+        raise
+```
+
+## Adding a New Service
+
+To add a new Africa's Talking service:
+
+<Accordion title="Step-by-step guide">
+  1. **Create a route file**: `routes/new_service.py`
+  
+  2. **Define a blueprint**:
+     ```python
+     from flask import Blueprint
+     
+     new_service_bp = Blueprint("new_service", __name__)
+     
+     @new_service_bp.route("/", methods=["GET"])
+     def status():
+         return {"service": "new_service", "status": "ready"}
+     ```
+  
+  3. **Create utility functions**: `utils/new_service_utils.py`
+  
+  4. **Import and use**: The route will be automatically discovered and registered at `/api/new_service`
+  
+  5. **No additional configuration needed** - the auto-discovery system handles everything!
+</Accordion>
+
+## Error Handling Pattern
+
+The application follows a consistent error handling pattern:
+
+```python
+try:
+    response = perform_operation()
+    return {"message": "Success", "response": response}
+except ValueError as e:
+    # Client errors (400)
+    return {"error": str(e)}, 400
+except Exception as e:
+    # Server errors (500)
+    return {"error": str(e)}, 500
+```
+
+<Note>
+Webhook endpoints typically return simple `"OK"` or `"GOOD"` responses with appropriate status codes rather than JSON.
+</Note>
+
+## Summary
+
+The architecture demonstrates several best practices:
+
+- **Modular design** with Flask Blueprints
+- **Auto-discovery** eliminates manual configuration
+- **Separation of concerns** between routes and business logic
+- **Environment-based configuration** for flexibility
+- **Consistent error handling** across all services
+- **Extensible structure** makes adding new services trivial
+
+This design allows developers to focus on implementing service logic rather than boilerplate configuration.

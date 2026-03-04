@@ -1,0 +1,289 @@
+---
+title: "AI Utility Functions"
+description: "Documentation for ask_gemini(), ask_gemini_as_xml(), and ask_gemini_structured() functions"
+---
+
+## Overview
+
+The AI utilities module provides three main functions for interacting with Google's Gemini API, each optimized for different use cases in Africa's Talking applications.
+
+## Core Functions
+
+### ask_gemini()
+
+Generate plain text responses from Gemini.
+
+```python
+ask_gemini(prompt: str, model: str = DEFAULT_MODEL) -> str
+```
+
+**Parameters:**
+- `prompt` (str) - The question or instruction to send to Gemini
+- `model` (str, optional) - The model to use (defaults to `DEFAULT_MODEL`)
+
+**Returns:**
+- `str` - Plain text response from Gemini
+
+**Example:**
+
+```python
+from utils.ai_utils import ask_gemini
+
+# Simple question
+response = ask_gemini("What is the capital of Kenya?")
+print(response)  # "Nairobi"
+
+# With a specific model
+response = ask_gemini(
+    "Explain photosynthesis in one sentence",
+    model="gemini-2.0-pro"
+)
+```
+
+**Use Cases:**
+- SMS auto-replies
+- Chatbot responses
+- General Q&A
+- Content generation
+
+---
+
+### ask_gemini_as_xml()
+
+Generate XML-formatted responses for Voice and USSD APIs.
+
+```python
+ask_gemini_as_xml(
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    root_tag: str = "Response"
+) -> str
+```
+
+**Parameters:**
+- `prompt` (str) - The question or instruction to send to Gemini
+- `model` (str, optional) - The model to use (defaults to `DEFAULT_MODEL`)
+- `root_tag` (str, optional) - The XML root element name (defaults to `"Response"`)
+
+**Returns:**
+- `str` - XML-formatted response with `<?xml>` declaration
+
+**Example:**
+
+```python
+from utils.ai_utils import ask_gemini_as_xml
+
+# Generate Voice API response
+xml = ask_gemini_as_xml("Tell a short joke")
+print(xml)
+```
+
+**Output:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Why did the chicken cross the road? To get to the other side!</Say>
+</Response>
+```
+
+**Custom Root Tag:**
+
+```python
+# Use a custom root element
+xml = ask_gemini_as_xml(
+    "Welcome message for callers",
+    root_tag="Call"
+)
+```
+
+**Use Cases:**
+- Voice API callbacks
+- IVR responses
+- Dynamic call flows
+- Text-to-speech content
+
+---
+
+### ask_gemini_structured()
+
+Generate structured responses in JSON, XML, or custom formats.
+
+```python
+ask_gemini_structured(
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    output_format: str = "json"
+) -> str
+```
+
+**Parameters:**
+- `prompt` (str) - The question or instruction to send to Gemini
+- `model` (str, optional) - The model to use (defaults to `DEFAULT_MODEL`)
+- `output_format` (str, optional) - Desired format: `"json"`, `"xml"`, or custom (defaults to `"json"`)
+
+**Returns:**
+- `str` - Structured response in the requested format
+
+**Example (JSON):**
+
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+# Request JSON response
+response = ask_gemini_structured(
+    "List 3 African countries with their capitals",
+    output_format="json"
+)
+
+data = json.loads(response)
+print(data)
+# {
+#   "countries": [
+#     {"name": "Kenya", "capital": "Nairobi"},
+#     {"name": "Nigeria", "capital": "Abuja"},
+#     {"name": "South Africa", "capital": "Pretoria"}
+#   ]
+# }
+```
+
+**Example (XML):**
+
+```python
+# Request XML response
+response = ask_gemini_structured(
+    "Create a menu with 3 food items",
+    output_format="xml"
+)
+print(response)
+# <menu>
+#   <item>Pizza</item>
+#   <item>Pasta</item>
+#   <item>Salad</item>
+# </menu>
+```
+
+**Use Cases:**
+- USSD menu generation
+- API integrations
+- Data extraction
+- Structured content creation
+
+---
+
+## Retry Logic & Error Handling
+
+All functions use the internal `_call_gemini()` helper with built-in retry logic:
+
+```python utils/ai_utils.py
+def _call_gemini(prompt: str, model: str, retries: int = 3, delay: float = 2.0):
+    """
+    Internal helper to call Gemini with retry logic.
+    Retries on network or API errors.
+    """
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+
+            if hasattr(response, "text") and response.text:
+                return response.text.strip()
+
+            raise ValueError("Empty response from Gemini")
+
+        except (GoogleAPIError, ValueError, Exception) as e:
+            last_error = e
+            print(f"⚠️ Gemini call failed (attempt {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(delay * attempt)  # exponential backoff
+
+    raise RuntimeError(f"Gemini request failed after {retries} retries: {last_error}")
+```
+
+### Features:
+
+1. **Automatic Retries** - Up to 3 attempts by default
+2. **Exponential Backoff** - Delays increase with each retry (2s, 4s, 6s)
+3. **Error Logging** - Prints warning messages for failed attempts
+4. **Multiple Exception Types** - Handles `GoogleAPIError`, `ValueError`, and general exceptions
+5. **Empty Response Detection** - Validates that response contains text
+
+### Error Handling Best Practices
+
+```python
+from utils.ai_utils import ask_gemini
+
+# Always wrap AI calls in try-except blocks
+try:
+    response = ask_gemini("Your prompt here")
+    # Process response
+    print(f"Success: {response}")
+    
+except RuntimeError as e:
+    # Handle retry exhaustion
+    print(f"AI service unavailable: {e}")
+    response = "Sorry, our AI service is temporarily unavailable."
+    
+except Exception as e:
+    # Handle unexpected errors
+    print(f"Unexpected error: {e}")
+    response = "An error occurred. Please try again later."
+```
+
+### Production Usage
+
+For production applications, consider:
+
+```python
+import logging
+from utils.ai_utils import ask_gemini
+
+logger = logging.getLogger(__name__)
+
+def get_ai_response(user_message: str, fallback: str = "I couldn't process that.") -> str:
+    """
+    Get AI response with proper error handling and fallback.
+    """
+    try:
+        response = ask_gemini(user_message)
+        logger.info(f"AI response generated for: {user_message[:50]}...")
+        return response
+        
+    except RuntimeError as e:
+        logger.error(f"AI service failed after retries: {e}")
+        return fallback
+        
+    except Exception as e:
+        logger.exception(f"Unexpected AI error: {e}")
+        return fallback
+```
+
+## Configuration Reference
+
+### DEFAULT_MODEL
+
+Configured in `utils/ai_utils.py`:
+
+```python
+DEFAULT_MODEL = os.getenv("MODEL_ID", "gemini-2.5-flash")
+```
+
+Override via:
+1. Environment variable: `MODEL_ID=gemini-2.0-pro`
+2. Function parameter: `ask_gemini(prompt, model="gemini-2.0-pro")`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gemini Setup" icon="key" href="/ai/gemini-setup">
+    Configure API credentials and environment
+  </Card>
+  <Card title="Real-World Examples" icon="code" href="/ai/examples">
+    See AI integration with SMS, Voice, and USSD
+  </Card>
+</CardGroup>

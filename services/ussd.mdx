@@ -1,0 +1,506 @@
+---
+title: 'USSD Service'
+description: 'Build interactive USSD menus with session handling'
+---
+
+## Overview
+
+The USSD service enables you to build interactive menu-driven applications accessible via shortcodes (e.g., `*123#`). USSD sessions are stateful and support navigation through multiple menu levels.
+
+## Service Status
+
+### Check USSD Service Status
+
+<CodeGroup>
+```bash GET /ussd/
+curl http://localhost:8000/ussd/
+```
+</CodeGroup>
+
+**Response**
+```
+Welcome to the USSD service
+```
+
+---
+
+## USSD Session Handling
+
+### Handle USSD Session
+
+Process USSD requests and return menu responses.
+
+<CodeGroup>
+```bash POST /ussd/session
+curl -X POST http://localhost:8000/ussd/session \
+  -d "sessionId=ATUid_123" \
+  -d "serviceCode=*123#" \
+  -d "phoneNumber=%2B254711000111" \
+  -d "text="
+```
+</CodeGroup>
+
+<ParamField body="sessionId" type="string" required>
+  Unique session identifier from Africa's Talking
+</ParamField>
+
+<ParamField body="serviceCode" type="string" required>
+  USSD shortcode that was dialed (e.g., `*123#`)
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  User's phone number
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  User's input (empty for first request, then contains menu selections)
+  
+  Examples:
+  - `""` - First request (main menu)
+  - `"1"` - User selected option 1
+  - `"1*1"` - User selected 1, then 1 (navigation path)
+</ParamField>
+
+**Implementation**
+```python
+# From routes/ussd.py:11-46
+@ussd_bp.route("/session", methods=["POST"])
+def ussd_handler():
+    # Read the variables sent via POST from our API
+    session_id = request.values.get("sessionId", None)
+    serviceCode = request.values.get("serviceCode", None)
+    phone_number = request.values.get("phoneNumber", None)
+    text = request.values.get("text", "")
+
+    # Print the details
+    print(f"session_id: {session_id}")
+    print(f"serviceCode: {serviceCode}")
+
+    if text == "":
+        # First request. Start response with CON
+        response = "CON What would you want to check \n"
+        response += "1. My Account \n"
+        response += "2. My phone number"
+
+    elif text == "1":
+        # First level response
+        response = "CON Choose account information you want to view \n"
+        response += "1. Account number"
+
+    elif text == "2":
+        # Terminal request
+        response = "END Your phone number is " + str(phone_number)
+
+    elif text == "1*1":
+        # Second level response
+        accountNumber = "ACC1001"
+        response = "END Your account number is " + accountNumber
+
+    else:
+        response = "END Invalid choice"
+
+    return response
+```
+
+---
+
+## USSD Response Format
+
+### Response Prefixes
+
+USSD responses must start with either `CON` or `END`:
+
+<AccordionGroup>
+  <Accordion title="CON - Continue Session">
+    Used when you want to show a menu and wait for user input.
+    
+    ```python
+    response = "CON What would you want to check \n"
+    response += "1. My Account \n"
+    response += "2. My phone number"
+    ```
+    
+    **Output on phone:**
+    ```
+    What would you want to check
+    1. My Account
+    2. My phone number
+    ```
+  </Accordion>
+
+  <Accordion title="END - End Session">
+    Used to display final message and terminate the session.
+    
+    ```python
+    response = "END Your phone number is +254711000111"
+    ```
+    
+    **Output on phone:**
+    ```
+    Your phone number is +254711000111
+    ```
+    
+    Session ends after this message.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Menu Structure Example
+
+The demo application implements this menu structure:
+
+<Steps>
+  <Step title="Main Menu (text = '')">
+    ```
+    CON What would you want to check
+    1. My Account
+    2. My phone number
+    ```
+  </Step>
+  
+  <Step title="Option 1: Account Menu (text = '1')">
+    ```
+    CON Choose account information you want to view
+    1. Account number
+    ```
+  </Step>
+  
+  <Step title="Option 1-1: Show Account (text = '1*1')">
+    ```
+    END Your account number is ACC1001
+    ```
+    Session ends.
+  </Step>
+  
+  <Step title="Option 2: Show Phone (text = '2')">
+    ```
+    END Your phone number is +254711000111
+    ```
+    Session ends.
+  </Step>
+  
+  <Step title="Invalid Input">
+    ```
+    END Invalid choice
+    ```
+    Session ends.
+  </Step>
+</Steps>
+
+---
+
+## Navigation Patterns
+
+### Text Parameter Format
+
+The `text` parameter shows the user's navigation path using `*` as a separator:
+
+| User Action | text Value | Meaning |
+|-------------|------------|----------|
+| Dials `*123#` | `""` | First request (main menu) |
+| Selects 1 | `"1"` | User chose option 1 |
+| Then selects 2 | `"1*2"` | User chose 1, then 2 |
+| Then selects 3 | `"1*2*3"` | User chose 1, then 2, then 3 |
+
+### Building Complex Menus
+
+```python
+@ussd_bp.route("/session", methods=["POST"])
+def ussd_handler():
+    text = request.values.get("text", "")
+    phone_number = request.values.get("phoneNumber", None)
+    
+    if text == "":
+        # Main menu
+        response = "CON Welcome! Choose a service\n"
+        response += "1. Check Balance\n"
+        response += "2. Buy Airtime\n"
+        response += "3. Help"
+    
+    elif text == "1":
+        # Check balance
+        balance = get_user_balance(phone_number)
+        response = f"END Your balance is KES {balance}"
+    
+    elif text == "2":
+        # Airtime amounts menu
+        response = "CON Select amount\n"
+        response += "1. KES 50\n"
+        response += "2. KES 100\n"
+        response += "3. KES 200"
+    
+    elif text == "2*1":
+        # Buy KES 50 airtime
+        send_airtime(phone_number, 50)
+        response = "END KES 50 airtime sent to your number"
+    
+    elif text == "2*2":
+        # Buy KES 100 airtime
+        send_airtime(phone_number, 100)
+        response = "END KES 100 airtime sent to your number"
+    
+    elif text == "2*3":
+        # Buy KES 200 airtime
+        send_airtime(phone_number, 200)
+        response = "END KES 200 airtime sent to your number"
+    
+    elif text == "3":
+        # Help
+        response = "END For support, call 0711000111 or visit www.example.com"
+    
+    else:
+        response = "END Invalid option. Please try again."
+    
+    return response
+```
+
+---
+
+## Session Status Notifications
+
+### USSD Status Callback
+
+Receive end-of-session notifications with session details.
+
+<CodeGroup>
+```bash POST /ussd/status
+curl -X POST http://localhost:8000/ussd/status \
+  -d "date=2025-09-29+12:00:00" \
+  -d "sessionId=ATUid_123" \
+  -d "serviceCode=*123#" \
+  -d "networkCode=63902" \
+  -d "phoneNumber=%2B254711000111" \
+  -d "status=Success" \
+  -d "cost=KES+0.10" \
+  -d "durationInMillis=12345" \
+  -d "hopsCount=3" \
+  -d "input=1*1" \
+  -d "lastAppResponse=END+Your+account+number+is+ACC1001"
+```
+</CodeGroup>
+
+<ParamField body="date" type="string" required>
+  Timestamp of session end
+</ParamField>
+
+<ParamField body="sessionId" type="string" required>
+  Session identifier
+</ParamField>
+
+<ParamField body="serviceCode" type="string" required>
+  USSD shortcode
+</ParamField>
+
+<ParamField body="networkCode" type="string" required>
+  Mobile network operator code
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  User's phone number
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Session status (e.g., "Success")
+</ParamField>
+
+<ParamField body="cost" type="string" required>
+  Session cost
+</ParamField>
+
+<ParamField body="durationInMillis" type="string" required>
+  Session duration in milliseconds
+</ParamField>
+
+<ParamField body="hopsCount" type="string" required>
+  Number of user interactions
+</ParamField>
+
+<ParamField body="input" type="string" required>
+  Full user navigation path
+</ParamField>
+
+<ParamField body="lastAppResponse" type="string" required>
+  Last response sent to user
+</ParamField>
+
+<ParamField body="errorMessage" type="string">
+  Error message (if status is not "Success")
+</ParamField>
+
+**Implementation**
+```python
+# From routes/ussd.py:49-78
+ussd_bp.route("/status", methods=["POST"])
+
+def ussd_status():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📲 USSD Status Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    # Always acknowledge with 200 OK
+    return Response("OK", status=200)
+```
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+## Testing USSD Locally
+
+### Using Simulator
+
+<Steps>
+  <Step title="Start Local Server">
+    ```bash
+    python app.py
+    ```
+  </Step>
+  
+  <Step title="Expose with ngrok">
+    ```bash
+    ngrok http 8000
+    ```
+    
+    Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
+  </Step>
+  
+  <Step title="Test with curl">
+    ```bash
+    # Main menu
+    curl -X POST https://abc123.ngrok.io/ussd/session \
+      -d "sessionId=test-123" \
+      -d "serviceCode=*123#" \
+      -d "phoneNumber=%2B254711000111" \
+      -d "text="
+    
+    # Select option 1
+    curl -X POST https://abc123.ngrok.io/ussd/session \
+      -d "sessionId=test-123" \
+      -d "serviceCode=*123#" \
+      -d "phoneNumber=%2B254711000111" \
+      -d "text=1"
+    
+    # Select option 1, then 1
+    curl -X POST https://abc123.ngrok.io/ussd/session \
+      -d "sessionId=test-123" \
+      -d "serviceCode=*123#" \
+      -d "phoneNumber=%2B254711000111" \
+      -d "text=1*1"
+    ```
+  </Step>
+  
+  <Step title="Configure Callback URL">
+    In Africa's Talking dashboard, set your USSD callback URL to:
+    ```
+    https://abc123.ngrok.io/ussd/session
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Menus Simple">
+    Limit menu options to 5-7 items per screen for better usability.
+    
+    ```python
+    # Good
+    response = "CON Main Menu\n"
+    response += "1. Check Balance\n"
+    response += "2. Buy Airtime\n"
+    response += "3. Help"
+    
+    # Avoid
+    response = "CON Main Menu\n"
+    response += "1. Check Balance\n"
+    response += "2. Buy Airtime\n"
+    response += "3. Transfer Money\n"
+    response += "4. Pay Bills\n"
+    response += "5. My Account\n"
+    response += "6. Settings\n"
+    response += "7. About\n"
+    response += "8. Help\n"
+    response += "9. Exit"
+    ```
+  </Accordion>
+
+  <Accordion title="Provide Clear Instructions">
+    Always tell users what to do next.
+    
+    ```python
+    # Good
+    response = "CON Enter amount (10-1000)"
+    
+    # Avoid
+    response = "CON Amount:"
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Invalid Input Gracefully">
+    Always have a fallback for unexpected input.
+    
+    ```python
+    # Always end with an else clause
+    if text == "":
+        response = "CON Main Menu..."
+    elif text == "1":
+        response = "CON Option 1..."
+    else:
+        response = "END Invalid option. Please dial again."
+    ```
+  </Accordion>
+
+  <Accordion title="Keep Sessions Short">
+    USSD sessions timeout after inactivity. Aim for 3-4 menu levels maximum.
+    
+    ```python
+    # Maximum depth example
+    if text == "1*2*3*4":
+        # This is getting too deep
+        response = "END Please dial again to continue"
+    ```
+  </Accordion>
+
+  <Accordion title="Store Session State">
+    For complex flows, store session data in a database or cache.
+    
+    ```python
+    import redis
+    
+    r = redis.Redis()
+    
+    # Store user's selection
+    if text == "1":
+        r.setex(f"session:{session_id}", 300, "airtime_flow")
+        response = "CON Enter amount\n"
+    
+    # Retrieve later
+    elif text.startswith("1*"):
+        flow = r.get(f"session:{session_id}")
+        if flow == "airtime_flow":
+            amount = text.split("*")[1]
+            send_airtime(phone_number, amount)
+            response = f"END Airtime of {amount} sent"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SMS Service" icon="message" href="/services/sms">
+    Send SMS confirmations after USSD transactions
+  </Card>
+  <Card title="Airtime Service" icon="mobile" href="/services/airtime">
+    Integrate airtime purchases in your USSD menu
+  </Card>
+</CardGroup>

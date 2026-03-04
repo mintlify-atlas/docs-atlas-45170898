@@ -1,0 +1,139 @@
+---
+title: "Gemini API Setup"
+description: "Learn how to get a Gemini API key, install the SDK, and configure credentials for AI integration"
+---
+
+## Overview
+
+This guide walks you through setting up Google's Gemini API for AI-powered features in your Africa's Talking applications.
+
+## Getting a Gemini API Key
+
+1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click **Get API Key** or **Create API Key**
+4. Copy your API key - you'll need it for configuration
+
+<Warning>
+Keep your API key secure! Never commit it to version control or share it publicly.
+</Warning>
+
+## Installing the SDK
+
+Install the Google Generative AI SDK using pip:
+
+```bash
+pip install google-genai python-dotenv
+```
+
+The `python-dotenv` package is used to manage environment variables securely.
+
+## Configuring Credentials
+
+### 1. Create a `.env` file
+
+In your project root, create a `.env` file:
+
+```bash
+# .env
+GEMINI_API_KEY=your_api_key_here
+MODEL_ID=gemini-2.5-flash
+```
+
+### 2. Add `.env` to `.gitignore`
+
+Ensure your `.env` file is not tracked by Git:
+
+```bash
+echo ".env" >> .gitignore
+```
+
+### 3. Load Environment Variables
+
+The AI utilities automatically load your credentials:
+
+```python utils/ai_utils.py
+import os
+from dotenv import load_dotenv
+from google import genai
+
+# Load environment variables from .env
+load_dotenv()
+
+# Setup Gemini client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("Missing GEMINI_API_KEY in environment")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Default model (can override in function calls)
+DEFAULT_MODEL = os.getenv("MODEL_ID", "gemini-2.5-flash")
+```
+
+## Configuration Options
+
+### DEFAULT_MODEL
+
+The `DEFAULT_MODEL` is set to `gemini-2.5-flash` by default, which provides:
+
+- Fast response times (ideal for real-time applications)
+- Cost-effective API usage
+- Good balance of quality and speed
+
+You can override this in your `.env` file or when calling AI functions:
+
+```python
+# Use default model
+response = ask_gemini("Hello, how are you?")
+
+# Override with a specific model
+response = ask_gemini("Hello, how are you?", model="gemini-2.0-pro")
+```
+
+## Available Models
+
+- `gemini-2.5-flash` - Fast, optimized for speed (default)
+- `gemini-2.0-pro` - More powerful, better for complex tasks
+- `gemini-1.5-pro` - Previous generation, stable
+
+## Verifying Your Setup
+
+Test your configuration with a simple script:
+
+```python
+from utils.ai_utils import ask_gemini
+
+try:
+    response = ask_gemini("Say hello!")
+    print(f"✓ Gemini is working: {response}")
+except Exception as e:
+    print(f"✗ Setup error: {e}")
+```
+
+If configured correctly, you should see a greeting response from Gemini.
+
+## Troubleshooting
+
+### "Missing GEMINI_API_KEY in environment"
+
+- Ensure your `.env` file exists in the project root
+- Check that the variable name is exactly `GEMINI_API_KEY`
+- Verify you've called `load_dotenv()` before accessing the key
+
+### "Invalid API key" or authentication errors
+
+- Verify your API key is correct (no extra spaces)
+- Check that your API key is active in Google AI Studio
+- Ensure you have API access enabled for your Google account
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AI Utilities" icon="code" href="/ai/utilities">
+    Learn about the three main AI utility functions
+  </Card>
+  <Card title="Examples" icon="lightbulb" href="/ai/examples">
+    See real-world examples with SMS, Voice, and USSD
+  </Card>
+</CardGroup>

@@ -1,0 +1,472 @@
+---
+title: Local Server Tunneling
+description: Comprehensive guide on exposing your local development server to the internet using ngrok, cloudflared, and localhost.run
+---
+
+## Overview
+
+To receive webhooks from Africa's Talking, your local development server must be accessible from the internet. Tunneling tools create a secure connection between a public URL and your local server, allowing external services to reach your endpoints.
+
+## Why Tunneling is Required
+
+Africa's Talking sends webhook notifications (SMS delivery reports, voice events, etc.) to your configured callback URLs. Since these services run on Africa's Talking's servers, they can't reach `localhost` on your development machine. Tunneling solves this by:
+
+- Creating a public HTTPS URL that forwards to your local server
+- Providing secure encrypted connections
+- Allowing real-time testing of webhooks during development
+
+<Note>
+  For production deployments, you'll deploy your application to a server with a public IP address or domain, eliminating the need for tunneling.
+</Note>
+
+## Tunneling Options
+
+This guide covers three popular tunneling solutions:
+
+1. **ngrok** - Feature-rich, reliable, with a free tier
+2. **Cloudflare Tunnel (cloudflared)** - Free, no account required for basic use
+3. **localhost.run** - Simple SSH-based tunneling, no installation needed
+
+---
+
+## Option 1: ngrok (Recommended)
+
+ngrok is the most popular and feature-rich tunneling solution, offering a generous free tier with persistent URLs on paid plans.
+
+### Installation
+
+<Steps>
+  <Step title="Download ngrok">
+    Visit [ngrok.com](https://ngrok.com/download) and download the version for your operating system.
+    
+    **For macOS (using Homebrew):**
+    ```bash
+    brew install ngrok/ngrok/ngrok
+    ```
+    
+    **For Linux:**
+    ```bash
+    curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
+      sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null && \
+      echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | \
+      sudo tee /etc/apt/sources.list.d/ngrok.list && \
+      sudo apt update && sudo apt install ngrok
+    ```
+    
+    **For Windows:**
+    Download the ZIP file from the ngrok website and extract it to a folder in your PATH.
+  </Step>
+
+  <Step title="Create an ngrok Account">
+    1. Go to [ngrok.com](https://ngrok.com/) and sign up for a free account
+    2. After signing in, navigate to the [dashboard](https://dashboard.ngrok.com/get-started/setup)
+    3. Copy your authentication token
+  </Step>
+
+  <Step title="Authenticate ngrok">
+    Run the following command with your authentication token:
+    
+    ```bash
+    ngrok authtoken YOUR_NGROK_AUTH_TOKEN
+    ```
+    
+    This saves your token to `~/.ngrok2/ngrok.yml` and authenticates all future sessions.
+  </Step>
+
+  <Step title="Add Token to .env File">
+    Store your ngrok auth token in your `.env` file for reference:
+    
+    ```bash
+    NGROK_AUTHTOKEN=your-ngrok-auth-token-here
+    ```
+  </Step>
+</Steps>
+
+### Starting ngrok
+
+Once installed and authenticated, start ngrok to tunnel to your Flask application:
+
+```bash
+ngrok http 9000
+```
+
+<Note>
+  Replace `9000` with the port number your Flask app is running on (check your `.env` file's `PORT` variable).
+</Note>
+
+### Understanding ngrok Output
+
+When ngrok starts, you'll see output like this:
+
+```bash
+ngrok                                                                                                                                           
+                                                                                                                                                
+Build better APIs with ngrok. Early access: ngrok.com/early-access                                                                             
+                                                                                                                                                
+Session Status                online                                                                                                            
+Account                       your-email@example.com (Plan: Free)                                                                              
+Version                       3.5.0                                                                                                             
+Region                        United States (us)                                                                                                
+Latency                       23ms                                                                                                              
+Web Interface                 http://127.0.0.1:4040                                                                                             
+Forwarding                    https://abc123.ngrok.io -> http://localhost:9000                                                                  
+                                                                                                                                                
+Connections                   ttl     opn     rt1     rt5     p50     p90                                                                       
+                              0       0       0.00    0.00    0.00    0.00
+```
+
+**Important information:**
+- **Forwarding URL**: `https://abc123.ngrok.io` - This is your public URL
+- **Web Interface**: `http://127.0.0.1:4040` - ngrok's local dashboard for monitoring requests
+
+<Tip>
+  The ngrok web interface at `http://127.0.0.1:4040` is incredibly useful for debugging. It shows all incoming requests, their headers, payloads, and your server's responses in real-time.
+</Tip>
+
+### Using Your ngrok URL
+
+Your public URL will be in the format: `https://abc123.ngrok.io`
+
+To access your Flask endpoints through ngrok:
+
+```bash
+# Local access
+http://localhost:9000/api/sms/
+
+# Public access via ngrok
+https://abc123.ngrok.io/api/sms/
+```
+
+### ngrok Advanced Features
+
+#### Custom Subdomain (Paid Plans)
+
+```bash
+ngrok http 9000 --subdomain=my-at-webhook
+```
+
+This creates a persistent URL: `https://my-at-webhook.ngrok.io`
+
+#### Configuration File
+
+Create `~/.ngrok2/ngrok.yml` for persistent configuration:
+
+```yaml
+version: "2"
+authtoken: YOUR_NGROK_AUTH_TOKEN
+tunnels:
+  africastalking:
+    proto: http
+    addr: 9000
+    subdomain: my-at-webhook  # Paid feature
+```
+
+Start the named tunnel:
+
+```bash
+ngrok start africastalking
+```
+
+#### Regional Endpoints
+
+For better performance in Africa:
+
+```bash
+ngrok http 9000 --region eu
+```
+
+Available regions: `us`, `eu`, `ap`, `au`, `sa`, `jp`, `in`
+
+<Tip>
+  Use the `eu` (Europe) region for better latency when working with Africa's Talking, as it's geographically closer to Africa.
+</Tip>
+
+---
+
+## Option 2: Cloudflare Tunnel
+
+Cloudflare Tunnel (cloudflared) is a free alternative that doesn't require an account for basic use.
+
+### Installation
+
+<Steps>
+  <Step title="Install cloudflared">
+    **For macOS (using Homebrew):**
+    ```bash
+    brew install cloudflared
+    ```
+    
+    **For Linux (Debian/Ubuntu):**
+    ```bash
+    wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    sudo dpkg -i cloudflared-linux-amd64.deb
+    ```
+    
+    **For Windows:**
+    Download from [Cloudflare's release page](https://github.com/cloudflare/cloudflared/releases)
+  </Step>
+
+  <Step title="Start the Tunnel">
+    Run cloudflared with the quick tunnel feature:
+    
+    ```bash
+    cloudflared tunnel --url http://localhost:9000
+    ```
+    
+    Replace `9000` with your Flask app's port.
+  </Step>
+</Steps>
+
+### Understanding cloudflared Output
+
+```bash
+2024-01-15T10:30:45Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to...
+2024-01-15T10:30:46Z INF Requesting new quick Tunnel on trycloudflare.com...
+2024-01-15T10:30:47Z INF +--------------------------------------------------------------------------------------------+
+2024-01-15T10:30:47Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable): |
+2024-01-15T10:30:47Z INF |  https://abc-def-123.trycloudflare.com                                                     |
+2024-01-15T10:30:47Z INF +--------------------------------------------------------------------------------------------+
+```
+
+Your public URL: `https://abc-def-123.trycloudflare.com`
+
+<Note>
+  Cloudflare quick tunnels generate random URLs each time. For persistent URLs, you need to create a Cloudflare account and configure a named tunnel.
+</Note>
+
+### Persistent Cloudflare Tunnel (With Account)
+
+<Steps>
+  <Step title="Login to Cloudflare">
+    ```bash
+    cloudflared tunnel login
+    ```
+    This opens a browser for authentication.
+  </Step>
+
+  <Step title="Create a Named Tunnel">
+    ```bash
+    cloudflared tunnel create africastalking-dev
+    ```
+  </Step>
+
+  <Step title="Configure the Tunnel">
+    Create a configuration file at `~/.cloudflared/config.yml`:
+    
+    ```yaml
+    tunnel: africastalking-dev
+    credentials-file: /home/username/.cloudflared/TUNNEL-ID.json
+    
+    ingress:
+      - hostname: your-domain.com
+        service: http://localhost:9000
+      - service: http_status:404
+    ```
+  </Step>
+
+  <Step title="Start the Tunnel">
+    ```bash
+    cloudflared tunnel run africastalking-dev
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Option 3: localhost.run
+
+localhost.run is the simplest option, using SSH tunneling with no installation required.
+
+### Usage
+
+Simply run this SSH command:
+
+```bash
+ssh -R 80:localhost:9000 nokey@localhost.run
+```
+
+**Explanation:**
+- `-R 80:localhost:9000` - Forward remote port 80 to local port 9000
+- `nokey@localhost.run` - Connect without SSH keys
+
+### Output
+
+```bash
+Connect to http://abc123.localhost.run or https://abc123.localhost.run
+```
+
+Your public URLs:
+- HTTP: `http://abc123.localhost.run`
+- HTTPS: `https://abc123.localhost.run`
+
+<Warning>
+  localhost.run URLs change with each session and may have rate limits. It's best for quick testing rather than extended development sessions.
+</Warning>
+
+### Custom Subdomain
+
+```bash
+ssh -R my-tunnel:80:localhost:9000 nokey@localhost.run
+```
+
+This attempts to create: `https://my-tunnel.localhost.run` (availability not guaranteed)
+
+---
+
+## Comparison of Tunneling Solutions
+
+| Feature | ngrok | Cloudflare Tunnel | localhost.run |
+|---------|-------|-------------------|---------------|
+| **Installation** | Required | Required | Not required |
+| **Account Required** | Yes (free tier) | No (for quick tunnels) | No |
+| **Persistent URLs** | Paid plans only | With account | No |
+| **HTTPS** | Yes (automatic) | Yes (automatic) | Yes (automatic) |
+| **Web Dashboard** | Yes | Via Cloudflare account | No |
+| **Request Inspection** | Yes | Via logs | No |
+| **Custom Domains** | Paid plans | With account | Limited |
+| **Stability** | Excellent | Excellent | Good |
+| **Best For** | Development & debugging | Production-like setups | Quick tests |
+
+<Tip>
+  **Recommendation**: Use **ngrok** for development due to its excellent debugging features and web dashboard. For production-like setups, consider **Cloudflare Tunnel**.
+</Tip>
+
+---
+
+## Configuring Your Application
+
+### Testing Your Tunnel
+
+After starting your tunnel, test that it works:
+
+```bash
+# Test with curl (replace with your tunnel URL)
+curl https://abc123.ngrok.io/api/sms/
+```
+
+Expected response:
+```json
+{
+  "service": "sms",
+  "status": "ready"
+}
+```
+
+### Using the Tunnel URL with Africa's Talking
+
+Once your tunnel is running, you'll use the public URL to configure webhooks in Africa's Talking dashboard.
+
+For example, if your ngrok URL is `https://abc123.ngrok.io`, your webhook URLs will be:
+
+- SMS Delivery Reports: `https://abc123.ngrok.io/api/sms/delivery-reports`
+- SMS Two-way: `https://abc123.ngrok.io/api/sms/twoway`
+- Voice Instructions: `https://abc123.ngrok.io/api/voice/instruct`
+- Voice Events: `https://abc123.ngrok.io/api/voice/events`
+- Airtime Validation: `https://abc123.ngrok.io/api/airtime/validation`
+- Airtime Status: `https://abc123.ngrok.io/api/airtime/status`
+
+See the [Webhook Configuration guide](/guides/webhook-configuration) for detailed instructions.
+
+---
+
+## Troubleshooting
+
+### Tunnel Not Starting
+
+**Problem:** ngrok or cloudflared fails to start.
+
+**Solutions:**
+1. Verify you've authenticated (ngrok only)
+2. Check that the port isn't already in use
+3. Ensure your Flask app is running before starting the tunnel
+4. Check firewall settings
+
+### 502 Bad Gateway Errors
+
+**Problem:** Accessing the tunnel URL returns a 502 error.
+
+**Solutions:**
+1. Verify your Flask application is running
+2. Check that you're tunneling to the correct port
+3. Ensure the Flask app is binding to `0.0.0.0`, not just `127.0.0.1`
+
+### Webhooks Not Received
+
+**Problem:** Africa's Talking webhooks aren't reaching your application.
+
+**Solutions:**
+1. Verify the webhook URLs in Africa's Talking dashboard are correct
+2. Check ngrok's web interface (`http://127.0.0.1:4040`) to see if requests are arriving
+3. Ensure your routes match the configured webhook paths exactly
+4. Check for HTTPS (Africa's Talking requires HTTPS for webhooks)
+
+### Tunnel URL Changes
+
+**Problem:** The tunnel URL changes every time you restart.
+
+**Solutions:**
+1. **ngrok**: Upgrade to a paid plan for persistent URLs
+2. **Cloudflare**: Set up a named tunnel with an account
+3. Update webhook URLs in Africa's Talking dashboard after each restart
+
+<Tip>
+  During active development, keep your tunnel running continuously to avoid having to update webhook URLs repeatedly.
+</Tip>
+
+### Rate Limits or Throttling
+
+**Problem:** Getting rate limit errors or slow responses.
+
+**Solutions:**
+1. **ngrok free tier**: Limited to 40 requests/minute
+2. Upgrade to a paid plan for higher limits
+3. Use Cloudflare Tunnel as an alternative
+
+---
+
+## Security Considerations
+
+<Warning>
+  **Important Security Practices:**
+  
+  - Never expose sensitive development databases through tunnels
+  - Use environment-specific credentials (development vs. production)
+  - Monitor tunnel access logs for suspicious activity
+  - Close tunnels when not actively developing
+  - Don't share tunnel URLs publicly
+</Warning>
+
+### Request Authentication
+
+Consider adding authentication to your webhook endpoints:
+
+```python
+from flask import request, abort
+import os
+
+def verify_africastalking_request():
+    # Add authentication logic here
+    # For example, checking IP addresses or signatures
+    pass
+```
+
+### IP Whitelisting
+
+Africa's Talking provides IP ranges for their webhook servers. You can restrict access to only these IPs in production.
+
+---
+
+## Next Steps
+
+Now that your local server is accessible from the internet:
+
+1. [Configure webhook URLs](/guides/webhook-configuration) in the Africa's Talking dashboard
+2. [Test your endpoints](/guides/testing) to ensure webhooks are received correctly
+3. Learn about [environment setup](/guides/environment-setup) for managing secrets
+
+## Additional Resources
+
+- [ngrok Documentation](https://ngrok.com/docs)
+- [Cloudflare Tunnel Documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
+- [localhost.run Documentation](https://localhost.run/docs/)
+- [Africa's Talking Webhooks Guide](https://developers.africastalking.com/)

@@ -1,0 +1,408 @@
+---
+title: 'Airtime Service'
+description: 'Send airtime to phone numbers with validation and status callbacks'
+---
+
+## Overview
+
+The Airtime service allows you to programmatically send airtime to phone numbers, validate transactions, and receive delivery status notifications.
+
+## Service Status
+
+### Check Airtime Service Status
+
+<CodeGroup>
+```bash GET /airtime/
+curl http://localhost:8000/airtime/
+```
+</CodeGroup>
+
+<ResponseField name="service" type="string">
+  Service name ("airtime")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+**Response Example**
+```json
+{
+  "service": "airtime",
+  "status": "ready"
+}
+```
+
+---
+
+## Sending Airtime
+
+### Send Airtime to Phone Number
+
+Send airtime credit to a mobile phone number.
+
+<CodeGroup>
+```bash GET /airtime/invoke-send-airtime
+curl "http://localhost:8000/airtime/invoke-send-airtime?phone=254711XXXYYY&amount=100&currency=KES"
+```
+</CodeGroup>
+
+<ParamField query="phone" type="string" required>
+  Recipient phone number (without + prefix)
+  
+  Example: `254711XXXYYY`
+</ParamField>
+
+<ParamField query="amount" type="string" default="10">
+  Amount of airtime to send (must be positive number)
+  
+  Example: `100`
+</ParamField>
+
+<ParamField query="currency" type="string" default="KES">
+  Currency code
+  
+  Example: `KES`, `UGX`, `TZS`
+</ParamField>
+
+<ParamField query="idempotencyKey" type="string" default="ABCDEF">
+  Unique key to prevent duplicate transactions
+  
+  Example: `unique-txn-123`
+</ParamField>
+
+**Implementation**
+```python
+# From routes/airtime.py:23-45
+@airtime_bp.route("/invoke-send-airtime", methods=["GET"])
+def invoke_send_airtime():
+    phone = "+" + request.args.get("phone", "").strip()
+    amount = request.args.get("amount", "10").strip()
+    currency = request.args.get("currency", "KES").strip()
+    idempotencyKey = request.args.get("idempotencyKey", "ABCDEF").strip()
+
+    print(f"📲 Request to send airtime to: {phone} with amount: {amount}")
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        amount_value = float(amount)
+        if amount_value <= 0:
+            return {"error": "'amount' must be a positive number"}, 400
+    except ValueError:
+        return {"error": "'amount' must be a valid number"}, 400
+
+    try:
+        response = send_airtime(phone, amount_value, currency, idempotencyKey or None)
+        return {"message": f"Airtime sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+**Response Example**
+```json
+{
+  "message": "Airtime sent to +254711XXXYYY",
+  "response": {
+    "errorMessage": "None",
+    "numSent": 1,
+    "totalAmount": "KES 100.0000",
+    "totalDiscount": "KES 0.6000",
+    "responses": [
+      {
+        "phoneNumber": "+254711XXXYYY",
+        "amount": "KES 100.0000",
+        "discount": "KES 0.6000",
+        "status": "Sent",
+        "requestId": "ATQid_...",
+        "errorMessage": "None"
+      }
+    ]
+  }
+}
+```
+
+**Error Responses**
+
+```json
+{
+  "error": "Missing 'phone' query parameter"
+}
+```
+
+```json
+{
+  "error": "'amount' must be a positive number"
+}
+```
+
+```json
+{
+  "error": "'amount' must be a valid number"
+}
+```
+
+---
+
+## Webhooks
+
+### Airtime Validation
+
+Validate airtime transaction requests before they are processed.
+
+<CodeGroup>
+```bash POST /airtime/validation
+curl -X POST http://localhost:8000/airtime/validation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionId": "SomeTransactionID",
+    "phoneNumber": "+254711XXXYYY",
+    "sourceIpAddress": "127.12.32.24",
+    "currencyCode": "KES",
+    "amount": 500.00
+  }'
+```
+</CodeGroup>
+
+<ParamField body="transactionId" type="string" required>
+  Unique transaction identifier
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Recipient's phone number
+</ParamField>
+
+<ParamField body="sourceIpAddress" type="string" required>
+  Source IP address of the request
+</ParamField>
+
+<ParamField body="currencyCode" type="string" required>
+  Currency code (e.g., "KES")
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Amount to validate
+</ParamField>
+
+**Implementation**
+```python
+# From routes/airtime.py:48-75
+@airtime_bp.route("/validation", methods=["POST"])
+def airtime_validation():
+    data = request.get_json(force=True)
+
+    transaction_id = data.get("transactionId")
+    phone_number = data.get("phoneNumber")
+    source_ip = data.get("sourceIpAddress")
+    currency = data.get("currencyCode")
+    amount = data.get("amount")
+
+    # Basic validation logic (you can replace with real checks)
+    if transaction_id and phone_number and currency and amount and source_ip:
+        status = "Validated"
+    else:
+        status = "Failed"
+
+    return jsonify({"status": status})
+```
+
+**Response Example**
+```json
+{
+  "status": "Validated"
+}
+```
+
+**Failed Validation**
+```json
+{
+  "status": "Failed"
+}
+```
+
+---
+
+### Airtime Status Callback
+
+Receive delivery status notifications for airtime transactions.
+
+<CodeGroup>
+```bash POST /airtime/status
+curl -X POST http://localhost:8000/airtime/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phoneNumber": "+254711XXXYYY",
+    "description": "Airtime Delivered Successfully",
+    "status": "Success",
+    "requestId": "ATQid_SampleTxnId123",
+    "discount": "KES 0.6000",
+    "value": "KES 100.0000"
+  }'
+```
+</CodeGroup>
+
+<ParamField body="phoneNumber" type="string" required>
+  Recipient's phone number
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Human-readable status description
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Delivery status (e.g., "Success", "Failed")
+</ParamField>
+
+<ParamField body="requestId" type="string" required>
+  Africa's Talking request ID
+</ParamField>
+
+<ParamField body="discount" type="string" required>
+  Discount amount with currency
+</ParamField>
+
+<ParamField body="value" type="string" required>
+  Airtime value with currency
+</ParamField>
+
+**Implementation**
+```python
+# From routes/airtime.py:78-108
+@airtime_bp.route("/status", methods=["POST"])
+def airtime_status():
+    data = request.get_json(force=True)
+
+    phone_number = data.get("phoneNumber")
+    description = data.get("description")
+    status = data.get("status")
+    request_id = data.get("requestId")
+    discount = data.get("discount")
+    value = data.get("value")
+
+    if not phone_number or not status or not request_id and not discount and not value:
+        return "BAD", 400
+
+    # Log or process the status here
+    print(f"📲 Airtime status update for {phone_number}: {status} ({description})")
+
+    # Respond with 200 OK and body "OK"
+    return "OK", 200
+```
+
+**Payload Example**
+```json
+{
+  "phoneNumber": "+254711XXXYYY",
+  "description": "Airtime Delivered Successfully",
+  "status": "Success",
+  "requestId": "ATQid_SampleTxnId123",
+  "discount": "KES 0.6000",
+  "value": "KES 100.0000"
+}
+```
+
+**Response**
+- Success: `"OK"` with status code 200
+- Error: `"BAD"` with status code 400
+
+---
+
+## Airtime Flow
+
+<Steps>
+  <Step title="Send Airtime">
+    Make a GET request to `/airtime/invoke-send-airtime` with phone and amount
+  </Step>
+  
+  <Step title="Validation (Optional)">
+    If configured, AT calls your `/airtime/validation` endpoint for approval
+  </Step>
+  
+  <Step title="Transaction Processed">
+    Africa's Talking processes the airtime transfer
+  </Step>
+  
+  <Step title="Receive Status">
+    Your `/airtime/status` endpoint receives delivery confirmation
+  </Step>
+  
+  <Step title="Handle Result">
+    Update your database and notify the user of success or failure
+  </Step>
+</Steps>
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Idempotency Keys">
+    Always provide unique `idempotencyKey` values to prevent duplicate charges if requests are retried.
+    
+    ```bash
+    curl "http://localhost:8000/airtime/invoke-send-airtime?
+      phone=254711XXXYYY&
+      amount=100&
+      idempotencyKey=txn-$(date +%s)"
+    ```
+  </Accordion>
+
+  <Accordion title="Validate Amounts">
+    Implement server-side validation to ensure amounts are within acceptable ranges and prevent fraud.
+    
+    ```python
+    MIN_AMOUNT = 10
+    MAX_AMOUNT = 1000
+    
+    if not (MIN_AMOUNT <= amount_value <= MAX_AMOUNT):
+        return {"error": f"Amount must be between {MIN_AMOUNT} and {MAX_AMOUNT}"}, 400
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Callbacks Reliably">
+    Always respond with 200 OK to status callbacks, even if processing fails internally. Log errors and process asynchronously if needed.
+    
+    ```python
+    try:
+        # Process the status update
+        update_database(data)
+        notify_user(data)
+    except Exception as e:
+        # Log error but still return 200 OK
+        logger.error(f"Failed to process airtime status: {e}")
+    
+    return "OK", 200
+    ```
+  </Accordion>
+
+  <Accordion title="Monitor Transaction Status">
+    Keep track of request IDs and match them with status callbacks to ensure all transactions are accounted for.
+    
+    ```python
+    # Store request ID when sending
+    transaction = {
+        "request_id": response["responses"][0]["requestId"],
+        "phone": phone,
+        "amount": amount,
+        "status": "pending"
+    }
+    db.save(transaction)
+    
+    # Update when status callback is received
+    db.update({"request_id": request_id}, {"status": status})
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SMS Service" icon="message" href="/services/sms">
+    Send confirmation SMS when airtime is delivered
+  </Card>
+  <Card title="SIM Swap" icon="sim-card" href="/services/sim-swap">
+    Check SIM swap status before sending airtime
+  </Card>
+</CardGroup>

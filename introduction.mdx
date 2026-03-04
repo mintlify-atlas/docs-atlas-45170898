@@ -1,0 +1,178 @@
+---
+title: Introduction
+description: Learn how to integrate Africa's Talking telecommunication APIs with Google Gemini AI
+mode: custom
+---
+
+<div className="relative overflow-hidden bg-gradient-to-br from-[#f38214] via-[#e67a1f] to-[#27813c] dark:from-[#1a1d27] dark:via-[#0f1117] dark:to-[#1a1d27] py-20 border-b dark:border-[#27272a] border-gray-200">
+  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utb3BhY2l0eT0iLjA1Ii8+PC9nPjwvc3ZnPg==')] opacity-20"></div>
+  
+  <div className="relative max-w-6xl mx-auto px-6 lg:px-8">
+    <div className="text-center">
+      <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white dark:text-gray-100 mb-6 tracking-tight">
+        Africa's Talking AI Integration Course
+      </h1>
+      <p className="text-lg sm:text-xl text-white/90 dark:text-gray-300 max-w-3xl mx-auto mb-8 leading-relaxed">
+        Master the integration of Africa's Talking telecommunication APIs with Google Gemini AI to build intelligent SMS, Voice, Airtime, USSD, and SIM Swap applications.
+      </p>
+      
+      <div className="flex flex-wrap items-center justify-center gap-4">
+        <a 
+          href="/quickstart" 
+          className="inline-flex items-center justify-center px-6 py-3 text-base font-semibold text-white bg-[#27813c] hover:bg-[#1f6630] dark:bg-[#27813c] dark:hover:bg-[#1f6630] rounded-lg transition-colors shadow-lg"
+        >
+          Get started
+          <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </a>
+        <a 
+          href="/api/sms-endpoints" 
+          className="inline-flex items-center justify-center px-6 py-3 text-base font-semibold text-white dark:text-gray-100 bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 border border-white/30 dark:border-white/20 rounded-lg transition-colors backdrop-blur-sm"
+        >
+          Explore API reference
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Quick start
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Get up and running with Africa's Talking APIs and Google Gemini AI in minutes
+    </p>
+  </div>
+
+  <Steps>
+    <Step title="Clone the repository and set up your environment">
+      Clone the course repository and create a virtual environment for Python dependencies.
+
+      ```bash
+      git clone https://github.com/DaggieBlanqx/Google-Africastalking-AI-Course
+      cd Google-Africastalking-AI-Course
+      python -m venv venv
+      source venv/bin/activate  # On Windows: venv\Scripts\activate
+      ```
+    </Step>
+
+    <Step title="Install dependencies">
+      Install all required Python packages using the Makefile command.
+
+      ```bash
+      make install
+      ```
+
+      This installs Flask, the Africa's Talking SDK, Google AI libraries, and other dependencies.
+    </Step>
+
+    <Step title="Configure your credentials">
+      Create a `.env` file in the project root with your Africa's Talking and Google Cloud credentials.
+
+      ```bash
+      AT_USERNAME=your_at_username
+      AT_API_KEY=your_at_api_key
+      AT_VOICE_NUMBER=your_voice_enabled_phone_number
+      AT_SHORTCODE=8995
+      PROJECT_ID=your_gcp_project_id
+      GEMINI_API_KEY=your_gemini_api_key
+      ```
+
+      <Note>
+        Get your Africa's Talking credentials at [account.africastalking.com](https://account.africastalking.com/) and your Gemini API key at [aistudio.google.com](https://aistudio.google.com/api-keys).
+      </Note>
+    </Step>
+
+    <Step title="Set up tunneling and start the server">
+      Expose your local server to the internet using ngrok or another tunneling tool, then start the Flask application.
+
+      ```bash
+      # In one terminal, start ngrok
+      ngrok http 5000
+
+      # In another terminal, start the Flask app
+      make dev
+      ```
+
+      Your server is now running and accessible via the ngrok URL. Configure this URL in your Africa's Talking app settings for webhook callbacks.
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Explore by topic
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Dive into specific Africa's Talking services and learn how to enhance them with AI
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card title="SMS integration" icon="comment-sms" href="/services/sms">
+      Send bulk SMS, handle two-way messaging, and receive delivery reports
+    </Card>
+    <Card title="Voice calls" icon="phone" href="/services/voice">
+      Make outbound calls and handle inbound calls with AI-powered responses
+    </Card>
+    <Card title="Airtime distribution" icon="mobile" href="/services/airtime">
+      Distribute airtime to phone numbers and handle transaction callbacks
+    </Card>
+    <Card title="USSD menus" icon="hashtag" href="/services/ussd">
+      Build interactive USSD applications with session management
+    </Card>
+    <Card title="SIM swap detection" icon="shield-halved" href="/services/sim-swap">
+      Detect SIM swap events for fraud prevention and security
+    </Card>
+    <Card title="AI integration" icon="brain" href="/ai/gemini-setup">
+      Integrate Google Gemini AI for intelligent, context-aware responses
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Core concepts
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Understand the architecture and key concepts behind the integration
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+      Learn about the Flask application structure and route organization
+    </Card>
+    <Card title="Webhooks" icon="webhook" href="/concepts/webhooks">
+      Handle asynchronous callbacks from Africa's Talking services
+    </Card>
+    <Card title="AI integration" icon="wand-magic-sparkles" href="/concepts/ai-integration">
+      Discover how Gemini AI enhances telecommunication services
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl bg-gradient-to-r from-[#f38214] to-[#27813c] dark:from-[#1a1d27] dark:to-[#242838] border dark:border-[#27272a] border-gray-200 p-8 sm:p-12 text-center shadow-xl">
+    <h2 className="text-2xl sm:text-3xl font-bold text-white dark:text-gray-100 mb-4">
+      Ready to build intelligent telecom applications?
+    </h2>
+    <p className="text-base sm:text-lg text-white/90 dark:text-gray-300 mb-6 max-w-2xl mx-auto">
+      Start with our quickstart guide and build your first AI-powered SMS or voice application in under 10 minutes.
+    </p>
+    <a 
+      href="/quickstart" 
+      className="inline-flex items-center justify-center px-6 py-3 text-base font-semibold text-gray-900 dark:text-gray-900 bg-white hover:bg-gray-100 dark:bg-white dark:hover:bg-gray-100 rounded-lg transition-colors shadow-lg"
+    >
+      Start building
+      <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+      </svg>
+    </a>
+  </div>
+</div>

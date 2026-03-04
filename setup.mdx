@@ -1,0 +1,698 @@
+---
+title: Setup
+description: Complete installation and configuration guide for the Africa's Talking AI Integration Course
+icon: gear
+---
+
+This guide will walk you through setting up your development environment, installing dependencies, configuring API credentials, and exposing your local server for webhooks.
+
+## Prerequisites
+
+Before you begin, ensure you have the following:
+
+<CardGroup cols={2}>
+  <Card title="Python 3.8+" icon="python">
+    Check your version:
+    ```bash
+    python3 --version
+    ```
+  </Card>
+  <Card title="Africa's Talking Account" icon="globe-africa">
+    Sign up at [account.africastalking.com](https://account.africastalking.com/)
+  </Card>
+  <Card title="Google Cloud Account" icon="google">
+    Create an account at [cloud.google.com](https://cloud.google.com/)
+  </Card>
+  <Card title="Tunneling Tool" icon="network-wired">
+    Install ngrok, Cloudflare Tunnel, or localhost.run
+  </Card>
+</CardGroup>
+
+<Note>
+  **Production vs Sandbox**: Voice calls and some advanced features require a production Africa's Talking account. You can start with the sandbox for SMS testing.
+</Note>
+
+---
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Download the course repository from GitHub:
+
+    ```bash
+    git clone https://github.com/DaggieBlanqx/Google-Africastalking-AI-Course
+    cd Google-Africastalking-AI-Course
+    ```
+  </Step>
+
+  <Step title="Create and activate a virtual environment">
+    Create an isolated Python environment for the project:
+
+    <CodeGroup>
+      ```bash macOS/Linux
+      python3 -m venv venv
+      source venv/bin/activate
+      ```
+
+      ```bash Windows (PowerShell)
+      python -m venv venv
+      venv\Scripts\activate
+      ```
+
+      ```bash Windows (Command Prompt)
+      python -m venv venv
+      venv\Scripts\activate.bat
+      ```
+    </CodeGroup>
+
+    <Tip>
+      When the virtual environment is active, you'll see `(venv)` at the beginning of your terminal prompt.
+    </Tip>
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required Python packages using the Makefile:
+
+    ```bash
+    make install
+    ```
+
+    This installs the following packages from `requirements.txt`:
+
+    ```txt
+    Flask==3.0.2              # Web framework
+    requests==2.32.3          # HTTP library
+    africastalking==1.2.6     # Africa's Talking SDK
+    google-api-core           # Google Cloud base library
+    google-cloud-aiplatform   # Vertex AI SDK
+    ruff==0.4.0               # Linter and formatter
+    ```
+
+    <Note>
+      If you don't have `make` installed, you can install dependencies directly:
+      ```bash
+      pip install -r requirements.txt
+      ```
+    </Note>
+  </Step>
+</Steps>
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root directory with your API credentials:
+
+<Steps>
+  <Step title="Copy the example file">
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+
+  <Step title="Edit the .env file">
+    Open `.env` in your text editor and configure the following variables:
+
+    ```bash .env
+    # Flask Configuration
+    FLASK_ENV=development
+    PORT=9000
+
+    # Africa's Talking Credentials
+    AT_USERNAME=sandbox  # Use 'sandbox' for testing, or your production username
+    AT_API_KEY=your_africastalking_api_key_here
+    AT_VOICE_NUMBER=+254XXXXXXXXX  # Your voice-enabled number (production only)
+    AT_SHORTCODE=8995  # Your shortcode for two-way SMS (if applicable)
+
+    # Google Cloud Credentials
+    PROJECT_ID=your_gcp_project_id
+    GEMINI_API_KEY=your_gemini_api_key_here
+    VERTEX_API_KEY=your_vertex_api_key_here
+
+    # Ngrok Configuration (optional)
+    NGROK_AUTHTOKEN=your_ngrok_auth_token_here
+    ```
+  </Step>
+</Steps>
+
+### Getting Africa's Talking Credentials
+
+<Steps>
+  <Step title="Create an Africa's Talking account">
+    1. Go to [account.africastalking.com](https://account.africastalking.com/)
+    2. Sign up for a free account
+    3. Create a team
+    4. Create an app within your team
+  </Step>
+
+  <Step title="Get your API credentials">
+    1. Navigate to your app dashboard
+    2. Go to **Settings** → **API Key**
+    3. Generate an API key if you don't have one
+    4. Copy your username (usually "sandbox" for testing) and API key
+  </Step>
+
+  <Step title="Enable SMS (Sandbox)">
+    For sandbox testing:
+    - The SMS product is enabled by default in sandbox mode
+    - You can send up to 100 free SMS messages
+    - You must add recipient phone numbers to your sandbox
+
+    <Warning>
+      Sandbox SMS can only be sent to phone numbers you've explicitly added in the sandbox settings.
+    </Warning>
+  </Step>
+
+  <Step title="Request production access (Optional)">
+    For production features (voice, premium SMS, etc.):
+    1. Go to your app dashboard
+    2. Navigate to **Products** → **Voice** (or other products)
+    3. Click **Request Access**
+    4. Complete the verification process
+    5. Once approved, you'll receive a voice-enabled phone number
+  </Step>
+</Steps>
+
+### Getting Google Cloud Credentials
+
+<Steps>
+  <Step title="Create a Google Cloud project">
+    1. Go to [console.cloud.google.com](https://console.cloud.google.com/)
+    2. Create a new project or select an existing one
+    3. Note your Project ID (you'll need this for `PROJECT_ID` in `.env`)
+  </Step>
+
+  <Step title="Get Gemini API key">
+    1. Go to [Google AI Studio](https://aistudio.google.com/api-keys)
+    2. Click **Create API Key**
+    3. Copy the API key to your `.env` file as `GEMINI_API_KEY`
+  </Step>
+
+  <Step title="Set up Vertex AI (Optional)">
+    For Vertex AI features:
+    1. Enable the Vertex AI API in your Google Cloud project
+    2. Set up authentication (API key or service account)
+    3. Add your Vertex AI credentials to `.env`
+
+    <Note>
+      Vertex AI may require billing to be enabled on your Google Cloud account.
+    </Note>
+  </Step>
+</Steps>
+
+---
+
+## Running the Application
+
+Start your Flask development server:
+
+<CodeGroup>
+  ```bash Using Make
+  make dev
+  ```
+
+  ```bash Direct Python
+  python app.py
+  ```
+
+  ```bash Production Mode
+  FLASK_ENV=production python app.py
+  ```
+</CodeGroup>
+
+You should see output confirming the server is running:
+
+```
+✅ Registered airtime at /api/airtime
+✅ Registered sim-swap at /api/sim-swap
+✅ Registered sms at /api/sms
+✅ Registered ussd at /api/ussd
+✅ Registered voice at /api/voice
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:9000
+```
+
+<Tip>
+  The server runs on port `9000` by default. You can change this by updating the `PORT` variable in your `.env` file.
+</Tip>
+
+### Verify Installation
+
+Test that the server is running by checking the SMS service status:
+
+```bash
+curl http://localhost:9000/api/sms/
+```
+
+Expected response:
+
+```json
+{
+  "service": "sms",
+  "status": "ready"
+}
+```
+
+---
+
+## Expose Your Server
+
+To receive webhooks from Africa's Talking, you need to expose your local server to the internet using a tunneling tool.
+
+### Option 1: Ngrok (Recommended)
+
+<Steps>
+  <Step title="Install ngrok">
+    Download from [ngrok.com/download](https://ngrok.com/download) or use a package manager:
+
+    <CodeGroup>
+      ```bash macOS (Homebrew)
+      brew install ngrok
+      ```
+
+      ```bash Linux (apt)
+      curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+      echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+      sudo apt update && sudo apt install ngrok
+      ```
+
+      ```bash Windows (Chocolatey)
+      choco install ngrok
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Authenticate ngrok">
+    Sign up at [ngrok.com](https://ngrok.com) to get an auth token, then run:
+
+    ```bash
+    ngrok authtoken YOUR_NGROK_AUTH_TOKEN
+    ```
+  </Step>
+
+  <Step title="Start the tunnel">
+    Expose your Flask server (running on port 9000):
+
+    ```bash
+    ngrok http 9000
+    ```
+
+    Or use the Makefile:
+
+    ```bash
+    make tunnel
+    ```
+
+    You'll see output like this:
+
+    ```
+    Session Status                online
+    Account                       yourname@example.com
+    Version                       3.x.x
+    Region                        United States (us)
+    Forwarding                    https://abc123def456.ngrok-free.app -> http://localhost:9000
+    ```
+
+    <Warning>
+      Keep ngrok running in a separate terminal window. If you close it, your webhooks will stop working.
+    </Warning>
+  </Step>
+
+  <Step title="Note your public URL">
+    Copy the `https://` forwarding URL (e.g., `https://abc123def456.ngrok-free.app`). You'll need this for webhook configuration.
+  </Step>
+</Steps>
+
+### Option 2: Cloudflare Tunnel
+
+```bash
+# Install cloudflared
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+chmod +x cloudflared
+
+# Start tunnel
+cloudflared tunnel --url http://localhost:9000
+```
+
+### Option 3: LocalTunnel
+
+```bash
+# Install localtunnel
+npm install -g localtunnel
+
+# Start tunnel
+lt --port 9000
+```
+
+---
+
+## Configure Webhooks
+
+Now that your server is exposed to the internet, configure Africa's Talking to send webhook notifications to your endpoints.
+
+### SMS Webhooks
+
+<Steps>
+  <Step title="Open your Africa's Talking dashboard">
+    Go to [account.africastalking.com](https://account.africastalking.com/) and select your app.
+  </Step>
+
+  <Step title="Navigate to SMS settings">
+    Go to **SMS** → **Settings** → **Callback URLs**
+  </Step>
+
+  <Step title="Set the webhook URLs">
+    Configure the following endpoints (replace `YOUR_NGROK_URL` with your actual ngrok URL):
+
+    - **Delivery Reports URL**: `https://YOUR_NGROK_URL/api/sms/delivery-reports`
+    - **Two-Way SMS URL**: `https://YOUR_NGROK_URL/api/sms/twoway`
+    - **Opt-Out URL**: `https://YOUR_NGROK_URL/api/sms/opt-out`
+    - **Subscription URL**: `https://YOUR_NGROK_URL/api/sms/subscription`
+
+    <Note>
+      Make sure to use `https://` (not `http://`) for webhook URLs.
+    </Note>
+  </Step>
+
+  <Step title="Save and test">
+    Click **Save** and send a test SMS. Check your Flask server logs to see if the delivery report webhook is received:
+
+    ```
+    📩 SMS Delivery Report Received:
+       id: ATXid_abc123
+       status: Success
+       phoneNumber: +254712345678
+       networkCode: 63902
+    ```
+  </Step>
+</Steps>
+
+### Voice Webhooks
+
+<Steps>
+  <Step title="Navigate to Voice settings">
+    In your Africa's Talking dashboard, go to **Voice** → **Settings**
+  </Step>
+
+  <Step title="Set the webhook URLs">
+    Configure the following endpoints:
+
+    - **Call Instructions URL**: `https://YOUR_NGROK_URL/api/voice/instruct`
+    - **Event Notification URL**: `https://YOUR_NGROK_URL/api/voice/events`
+  </Step>
+
+  <Step title="Test with a call">
+    Make a test call using the API. Your Flask server should receive:
+
+    1. A POST to `/api/voice/instruct` when the call is answered
+    2. Multiple POSTs to `/api/voice/events` for call lifecycle events
+
+    ```
+    📞 Call answered. Session: s_abc123, Caller: +254712345678, Destination: +254700000000
+    📢 Voice Event Received:
+       sessionId: s_abc123
+       eventType: CallStarted
+       callerNumber: +254712345678
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Project Structure
+
+Understand the codebase layout:
+
+```
+Google-Africastalking-AI-Course/
+├── app.py                  # Main Flask application entry point
+├── requirements.txt        # Python dependencies
+├── .env                    # Environment variables (create this)
+├── .env.example            # Example environment file
+├── Makefile                # Common tasks (dev, install, tunnel)
+├── routes/
+│   ├── __init__.py         # Auto-registers all route blueprints
+│   ├── sms.py              # SMS endpoints and webhooks
+│   ├── voice.py            # Voice endpoints and webhooks
+│   ├── airtime.py          # Airtime endpoints
+│   ├── sim-swap.py         # SIM swap endpoints
+│   └── ussd.py             # USSD endpoints
+└── utils/
+    ├── __init__.py
+    ├── sms_utils.py        # SMS helper functions
+    ├── voice_utils.py      # Voice helper functions
+    ├── airtime_utils.py    # Airtime helper functions
+    ├── simswap_utils.py    # SIM swap helper functions
+    └── ai_utils.py         # AI integration helpers
+```
+
+### Key Files
+
+<AccordionGroup>
+  <Accordion title="app.py - Application Entry Point">
+    The main Flask application file (`app.py:1-19`):
+
+    ```python
+    from flask import Flask
+    from routes import register_routes
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()  # Load .env file
+
+    PORT = int(os.getenv("PORT", 9000))
+    DEBUG = os.getenv("FLASK_ENV", "production") == "development"
+
+    app = Flask(__name__)
+    register_routes(app)  # Auto-register all blueprints
+
+    if __name__ == "__main__":
+        app.run(host="0.0.0.0", port=PORT, debug=DEBUG)
+    ```
+  </Accordion>
+
+  <Accordion title="routes/__init__.py - Route Registration">
+    Automatically discovers and registers all route blueprints:
+
+    ```python
+    import os
+    import importlib
+    from flask import Blueprint
+
+    def register_routes(app):
+        routes_dir = os.path.dirname(__file__)
+
+        for filename in os.listdir(routes_dir):
+            if filename.startswith("__") or not filename.endswith(".py"):
+                continue
+
+            module_name = f"routes.{filename[:-3]}"
+            module = importlib.import_module(module_name)
+
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if isinstance(attr, Blueprint):
+                    prefix = f"/api/{attr.name}"
+                    app.register_blueprint(attr, url_prefix=prefix)
+                    print(f"✅ Registered {attr.name} at {prefix}")
+    ```
+
+    This means any new `.py` file you add to the `routes/` folder with a Blueprint will be automatically registered!
+  </Accordion>
+
+  <Accordion title="utils/sms_utils.py - SMS Functions">
+    Helper functions for sending SMS (`utils/sms_utils.py:1-76`):
+
+    ```python
+    import os
+    import africastalking
+
+    AT_USERNAME = os.getenv("AT_USERNAME")
+    AT_API_KEY = os.getenv("AT_API_KEY")
+    AT_SHORTCODE = os.getenv("AT_SHORTCODE")
+
+    africastalking.initialize(AT_USERNAME, AT_API_KEY)
+    _sms = africastalking.SMS
+
+    def send_bulk_sms(message: str, recipients: List[str]) -> Dict[str, Any]:
+        """Send bulk SMS to multiple recipients"""
+        response = _sms.send(message, recipients)
+        return response
+
+    def send_twoway_sms(message: str, recipient: str, shortcode: str = AT_SHORTCODE):
+        """Send two-way SMS from a shortcode"""
+        response = _sms.send(message, [recipient], shortcode)
+        return response
+    ```
+  </Accordion>
+
+  <Accordion title="utils/voice_utils.py - Voice Functions">
+    Helper functions for making calls (`utils/voice_utils.py:1-46`):
+
+    ```python
+    import os
+    import africastalking
+
+    AT_USERNAME = os.getenv("AT_USERNAME")
+    AT_API_KEY = os.getenv("AT_API_KEY")
+    AT_VOICE_NUMBER = os.getenv("AT_VOICE_NUMBER")
+
+    africastalking.initialize(AT_USERNAME, AT_API_KEY)
+    _voice = africastalking.Voice
+
+    def make_call(phone_number: str, from_number: str = AT_VOICE_NUMBER):
+        """Initiate an outbound voice call"""
+        response = _voice.call(callTo=[phone_number], callFrom=from_number)
+        return response
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: Missing Africa's Talking credentials">
+    **Symptom**: 
+    ```
+    EnvironmentError: ❌ Missing Africa's Talking credentials (AT_USERNAME / AT_API_KEY)
+    ```
+
+    **Solution**:
+    1. Verify your `.env` file exists in the project root
+    2. Check that `AT_USERNAME` and `AT_API_KEY` are set correctly
+    3. Restart your Flask server after updating `.env`
+
+    ```bash
+    # Check if .env exists
+    cat .env
+
+    # Restart server
+    make dev
+    ```
+  </Accordion>
+
+  <Accordion title="Port already in use">
+    **Symptom**:
+    ```
+    OSError: [Errno 48] Address already in use
+    ```
+
+    **Solution**:
+    1. Change the port in your `.env` file:
+    ```bash
+    PORT=5000  # or any other available port
+    ```
+
+    2. Or kill the process using port 9000:
+    ```bash
+    # macOS/Linux
+    lsof -ti:9000 | xargs kill -9
+
+    # Windows
+    netstat -ano | findstr :9000
+    taskkill /PID <PID> /F
+    ```
+  </Accordion>
+
+  <Accordion title="Webhooks not received">
+    **Symptom**: API calls work, but webhooks (delivery reports, call events) are not received.
+
+    **Solution**:
+    1. Verify ngrok is running and showing a valid HTTPS URL
+    2. Check that webhook URLs in Africa's Talking dashboard use `https://` (not `http://`)
+    3. Test your webhook URL directly:
+    ```bash
+    curl -X POST https://YOUR_NGROK_URL/api/sms/delivery-reports \
+      -d "id=test123" \
+      -d "status=Success" \
+      -d "phoneNumber=+254712345678"
+    ```
+    4. Check Flask server logs for incoming requests
+    5. Ensure your firewall allows incoming connections on the Flask port
+  </Accordion>
+
+  <Accordion title="Module not found errors">
+    **Symptom**:
+    ```
+    ModuleNotFoundError: No module named 'africastalking'
+    ```
+
+    **Solution**:
+    1. Ensure your virtual environment is activated (you should see `(venv)` in your prompt)
+    2. Reinstall dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Accordion>
+
+  <Accordion title="Voice calls not working (sandbox)">
+    **Symptom**: Voice API returns errors or calls are not initiated.
+
+    **Solution**:
+    Voice calls **do not work in sandbox mode**. You must:
+    1. Upgrade to a production Africa's Talking account
+    2. Request access to the Voice product
+    3. Get a voice-enabled phone number
+    4. Update `AT_USERNAME` in `.env` to your production username (not "sandbox")
+    5. Set `AT_VOICE_NUMBER` to your voice-enabled number
+  </Accordion>
+
+  <Accordion title="Google AI/Gemini errors">
+    **Symptom**: AI features throw authentication errors.
+
+    **Solution**:
+    1. Verify your `GEMINI_API_KEY` is valid:
+       - Go to [Google AI Studio](https://aistudio.google.com/api-keys)
+       - Check if your API key is active
+       - Generate a new key if needed
+    2. For Vertex AI, ensure:
+       - Your Google Cloud project has Vertex AI API enabled
+       - Billing is enabled on your project
+       - You have proper authentication set up
+  </Accordion>
+
+  <Accordion title="CORS errors (when building a frontend)">
+    **Solution**:
+    Install Flask-CORS and enable it in `app.py`:
+
+    ```bash
+    pip install flask-cors
+    ```
+
+    ```python
+    from flask import Flask
+    from flask_cors import CORS
+    from routes import register_routes
+
+    app = Flask(__name__)
+    CORS(app)  # Enable CORS for all routes
+    register_routes(app)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+Now that your environment is set up, proceed to the [Quickstart Guide](/quickstart) to send your first SMS and make your first call!
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send an SMS and make a call in under 5 minutes
+  </Card>
+  <Card title="SMS API Reference" icon="message" href="/api/sms-endpoints">
+    Explore all SMS endpoints and features
+  </Card>
+  <Card title="Voice API Reference" icon="phone" href="/api/voice-endpoints">
+    Learn about voice calls and IVR
+  </Card>
+  <Card title="AI Integration" icon="brain" href="/ai/gemini-setup">
+    Add AI capabilities to your app
+  </Card>
+</CardGroup>

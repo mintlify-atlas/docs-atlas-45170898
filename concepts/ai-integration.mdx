@@ -1,0 +1,544 @@
+---
+title: AI Integration with Gemini
+description: How Gemini AI is integrated into Africa's Talking services to enhance functionality
+icon: brain-circuit
+---
+
+## Overview
+
+This application integrates Google's Gemini AI to enhance Africa's Talking services with intelligent, context-aware responses. The AI integration is designed to be modular, reusable, and production-ready with built-in error handling and retry logic.
+
+## Architecture
+
+The AI integration is centralized in `utils/ai_utils.py`, providing three main functions that can be used across all services:
+
+```python
+from utils.ai_utils import ask_gemini, ask_gemini_as_xml, ask_gemini_structured
+```
+
+### Configuration
+
+AI integration is configured through environment variables:
+
+```python utils/ai_utils.py
+import os
+from dotenv import load_dotenv
+from google import genai
+
+load_dotenv()
+
+# Setup Gemini client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("Missing GEMINI_API_KEY in environment")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Default model (can override in function calls)
+DEFAULT_MODEL = os.getenv("MODEL_ID", "gemini-2.5-flash")
+```
+
+<Note>
+The integration validates the API key on module import, failing fast if credentials are missing. This prevents runtime errors during request processing.
+</Note>
+
+## Core AI Functions
+
+### 1. Basic Text Response
+
+The `ask_gemini()` function provides simple, plain-text AI responses:
+
+```python utils/ai_utils.py
+def ask_gemini(prompt: str, model: str = DEFAULT_MODEL) -> str:
+    """
+    Ask Gemini a question and return plain text.
+    """
+    return _call_gemini(prompt, model)
+```
+
+**Usage Example:**
+```python
+from utils.ai_utils import ask_gemini
+
+# Get customer support response
+user_question = "How do I check my account balance?"
+response = ask_gemini(f"You are a customer support agent. Answer this question: {user_question}")
+# Returns: "To check your account balance, dial *123# and select option 1..."
+```
+
+### 2. XML-Formatted Response (for Voice/USSD)
+
+The `ask_gemini_as_xml()` function wraps AI responses in XML format, perfect for Voice API:
+
+```python utils/ai_utils.py
+def ask_gemini_as_xml(
+    prompt: str, model: str = DEFAULT_MODEL, root_tag: str = "Response"
+) -> str:
+    """
+    Ask Gemini and wrap the response inside an XML response.
+    Useful for USSD/Voice APIs.
+    """
+    text = _call_gemini(prompt, model)
+    xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<{root_tag}>\n  <Say>{text}</Say>\n</{root_tag}>'
+    return xml
+```
+
+**Usage Example:**
+```python
+from utils.ai_utils import ask_gemini_as_xml
+
+@voice_bp.route("/ai-greeting", methods=["POST"])
+def ai_voice_greeting():
+    caller = request.values.get("callerNumber")
+    prompt = f"Generate a friendly greeting for a caller from {caller}"
+    
+    # Returns properly formatted Voice API XML
+    return Response(ask_gemini_as_xml(prompt), mimetype="text/plain")
+```
+
+**Output:**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Hello! Thank you for calling. How can I assist you today?</Say>
+</Response>
+```
+
+### 3. Structured Data Response
+
+The `ask_gemini_structured()` function requests formatted responses (JSON, XML, etc.):
+
+```python utils/ai_utils.py
+def ask_gemini_structured(
+    prompt: str, model: str = DEFAULT_MODEL, output_format: str = "json"
+) -> str:
+    """
+    Ask Gemini and request a structured response.
+    Output format can be 'json', 'xml', or any custom instruction.
+    """
+    structured_prompt = f"Respond in {output_format.upper()} format only. {prompt}"
+    return _call_gemini(structured_prompt, model)
+```
+
+**Usage Example:**
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+# Extract structured information from user input
+user_message = "I want to send 500 KES to +254711000222"
+prompt = f"Extract phone number and amount from: {user_message}"
+
+response = ask_gemini_structured(prompt, output_format="json")
+data = json.loads(response)
+# {"phone": "+254711000222", "amount": 500, "currency": "KES"}
+```
+
+## Retry Logic and Error Handling
+
+The most critical aspect of production AI integration is robust error handling. The `_call_gemini()` internal function implements exponential backoff retry logic:
+
+```python utils/ai_utils.py
+import time
+from google.api_core.exceptions import GoogleAPIError
+
+def _call_gemini(prompt: str, model: str, retries: int = 3, delay: float = 2.0):
+    """
+    Internal helper to call Gemini with retry logic.
+    Retries on network or API errors.
+    """
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+
+            if hasattr(response, "text") and response.text:
+                return response.text.strip()
+
+            raise ValueError("Empty response from Gemini")
+
+        except (GoogleAPIError, ValueError, Exception) as e:
+            last_error = e
+            print(f"⚠️ Gemini call failed (attempt {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(delay * attempt)  # exponential backoff
+
+    raise RuntimeError(f"Gemini request failed after {retries} retries: {last_error}")
+```
+
+### How Retry Logic Works
+
+<Steps>
+  <Step title="Initial Attempt">
+    The function makes the first API call to Gemini.
+  </Step>
+  
+  <Step title="Error Detection">
+    If the call fails due to `GoogleAPIError`, `ValueError`, or any exception, it's caught.
+  </Step>
+  
+  <Step title="Log and Wait">
+    The error is logged with attempt number: `⚠️ Gemini call failed (attempt 1/3)`
+  </Step>
+  
+  <Step title="Exponential Backoff">
+    Wait time increases with each retry: 
+    - Attempt 1: Wait 2 seconds (delay * 1)
+    - Attempt 2: Wait 4 seconds (delay * 2)
+    - Attempt 3: Wait 6 seconds (delay * 3)
+  </Step>
+  
+  <Step title="Retry or Fail">
+    After 3 attempts, if still failing, raise `RuntimeError` with the last error.
+  </Step>
+</Steps>
+
+<Info>
+**Why Exponential Backoff?** This pattern gives temporary issues (network glitches, rate limits) time to resolve without overwhelming the API with rapid retries.
+</Info>
+
+### Error Handling Levels
+
+The integration handles multiple error scenarios:
+
+```python
+# 1. Missing API Key (fails at import)
+if not GEMINI_API_KEY:
+    raise ValueError("Missing GEMINI_API_KEY in environment")
+
+# 2. Empty Response
+if hasattr(response, "text") and response.text:
+    return response.text.strip()
+raise ValueError("Empty response from Gemini")
+
+# 3. API Errors (with retry)
+except (GoogleAPIError, ValueError, Exception) as e:
+    # Logged and retried
+
+# 4. Exhausted Retries
+raise RuntimeError(f"Gemini request failed after {retries} retries: {last_error}")
+```
+
+## Practical Integration Examples
+
+### Example 1: AI-Enhanced USSD Menu
+
+Create a USSD service with dynamic AI responses:
+
+```python routes/ussd.py
+from flask import Blueprint, request
+from utils.ai_utils import ask_gemini
+
+ussd_bp = Blueprint("ussd", __name__)
+
+@ussd_bp.route("/ai-assistant", methods=["POST"])
+def ai_ussd_assistant():
+    session_id = request.values.get("sessionId")
+    phone_number = request.values.get("phoneNumber")
+    text = request.values.get("text", "")
+
+    if text == "":
+        # Welcome menu
+        response = "CON AI Assistant\n"
+        response += "1. Ask a question\n"
+        response += "2. Get account tips\n"
+        response += "3. Support"
+    
+    elif text == "1":
+        response = "CON Type your question:"
+    
+    elif text.startswith("1*"):
+        # Extract user's question
+        question = text.split("*", 1)[1]
+        
+        # Get AI response
+        prompt = f"You are a helpful assistant. Answer briefly (max 160 chars): {question}"
+        try:
+            ai_answer = ask_gemini(prompt)
+            response = f"END {ai_answer}"
+        except Exception as e:
+            response = f"END Sorry, I couldn't process your question. Please try again."
+    
+    else:
+        response = "END Invalid option"
+    
+    return response
+```
+
+### Example 2: AI-Powered Voice Responses
+
+Generate dynamic voice call instructions:
+
+```python routes/voice.py
+from flask import Blueprint, request, Response
+from utils.ai_utils import ask_gemini_as_xml
+
+voice_bp = Blueprint("voice", __name__)
+
+@voice_bp.route("/ai-support", methods=["POST"])
+def ai_voice_support():
+    caller = request.values.get("callerNumber")
+    
+    # Get personalized greeting based on time of day
+    prompt = "Generate a brief, professional phone greeting for a customer calling a support line"
+    
+    try:
+        # Returns properly formatted XML for Voice API
+        xml_response = ask_gemini_as_xml(prompt)
+        return Response(xml_response, mimetype="text/plain")
+    except Exception as e:
+        # Fallback to static response
+        fallback = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Welcome to customer support. Please hold.</Say></Response>'
+        return Response(fallback, mimetype="text/plain")
+```
+
+### Example 3: Intelligent SMS Auto-Responder
+
+Create context-aware SMS responses:
+
+```python routes/sms.py
+from flask import Blueprint, request, Response
+from utils.sms_utils import send_twoway_sms
+from utils.ai_utils import ask_gemini
+
+sms_bp = Blueprint("sms", __name__)
+
+@sms_bp.route("/ai-responder", methods=["POST"])
+def ai_sms_responder():
+    sender = request.values.get("from")
+    message = request.values.get("text")
+    
+    # Generate intelligent response
+    prompt = f"""
+    You are a customer service SMS bot. Reply professionally and briefly (max 160 chars).
+    Customer message: {message}
+    """
+    
+    try:
+        ai_response = ask_gemini(prompt)
+        send_twoway_sms(message=ai_response, recipient=sender)
+    except Exception as e:
+        # Fallback response
+        send_twoway_sms(
+            message="Thank you for your message. A representative will respond shortly.",
+            recipient=sender
+        )
+    
+    return Response("OK", status=200)
+```
+
+### Example 4: Structured Data Extraction
+
+Extract structured information from natural language:
+
+```python routes/airtime.py
+from flask import Blueprint, request
+from utils.ai_utils import ask_gemini_structured
+from utils.airtime_utils import send_airtime
+import json
+
+airtime_bp = Blueprint("airtime", __name__)
+
+@airtime_bp.route("/natural-language", methods=["POST"])
+def nl_airtime_request():
+    # User sends: "Send 100 shillings airtime to +254711000111"
+    user_message = request.values.get("text")
+    
+    prompt = f"""
+    Extract airtime transfer details from this message.
+    Return JSON with: phone, amount, currency.
+    Message: {user_message}
+    """
+    
+    try:
+        structured_data = ask_gemini_structured(prompt, output_format="json")
+        data = json.loads(structured_data)
+        
+        # Validate and execute
+        if "phone" in data and "amount" in data:
+            result = send_airtime(
+                phone=data["phone"],
+                amount=float(data["amount"]),
+                currency=data.get("currency", "KES")
+            )
+            return {"status": "success", "result": result}
+        else:
+            return {"error": "Could not extract phone or amount"}, 400
+            
+    except Exception as e:
+        return {"error": f"Processing failed: {str(e)}"}, 500
+```
+
+## Model Selection
+
+The default model is `gemini-2.5-flash`, optimized for speed and cost. You can override per request:
+
+```python
+# Fast, cost-effective (default)
+response = ask_gemini(prompt, model="gemini-2.5-flash")
+
+# More capable for complex tasks
+response = ask_gemini(prompt, model="gemini-2.0-pro")
+
+# Or set globally via environment
+MODEL_ID=gemini-2.0-pro
+```
+
+<CardGroup cols={2}>
+  <Card title="gemini-2.5-flash" icon="bolt">
+    **Best for:** Quick responses, USSD/SMS, real-time interactions
+    
+    **Speed:** Very fast
+    
+    **Cost:** Lower
+  </Card>
+  
+  <Card title="gemini-2.0-pro" icon="sparkles">
+    **Best for:** Complex reasoning, structured data, nuanced responses
+    
+    **Speed:** Moderate
+    
+    **Cost:** Higher
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+### 1. Always Handle Failures
+
+```python
+try:
+    response = ask_gemini(prompt)
+    return {"ai_response": response}
+except RuntimeError as e:
+    # Log error and provide fallback
+    print(f"AI failed: {e}")
+    return {"response": "I'm having trouble right now. Please try again."}
+```
+
+### 2. Keep Prompts Concise
+
+```python
+# Good: Clear and specific
+prompt = "Summarize in 1 sentence: User wants account balance"
+
+# Avoid: Overly verbose
+prompt = "Please help me understand what the user is asking about and then provide a comprehensive detailed response..."
+```
+
+### 3. Respect Character Limits
+
+For SMS (160 chars) and USSD (182 chars per page):
+
+```python
+prompt = f"Answer in max 150 characters: {user_question}"
+response = ask_gemini(prompt)
+```
+
+### 4. Use Structured Responses for Parsing
+
+```python
+# Instead of parsing free text
+response = ask_gemini("What's the phone number in: 'call me at 0711000111'")
+# Returns: "The phone number is 0711000111" (needs parsing)
+
+# Use structured format
+response = ask_gemini_structured(
+    "Extract phone from: 'call me at 0711000111'",
+    output_format="json"
+)
+# Returns: {"phone": "+254711000111"} (ready to use)
+```
+
+### 5. Monitor Costs and Usage
+
+```python
+import time
+
+start = time.time()
+response = ask_gemini(prompt)
+latency = time.time() - start
+
+print(f"AI response in {latency:.2f}s | Prompt length: {len(prompt)}")
+```
+
+## Production Considerations
+
+<Warning>
+**Rate Limiting**: Gemini API has rate limits. For high-traffic applications:
+- Implement caching for common queries
+- Use queue systems for non-urgent requests
+- Monitor your API quotas
+</Warning>
+
+### Caching Common Responses
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=100)
+def get_faq_response(question: str) -> str:
+    """Cache responses to frequently asked questions"""
+    return ask_gemini(f"Answer this FAQ: {question}")
+```
+
+### Async Processing for High Volume
+
+```python
+import threading
+
+def process_ai_response_async(user_id, question):
+    def worker():
+        try:
+            response = ask_gemini(question)
+            # Store response in database for later retrieval
+            save_response(user_id, response)
+        except Exception as e:
+            log_error(user_id, e)
+    
+    thread = threading.Thread(target=worker)
+    thread.start()
+    return "Your request is being processed..."
+```
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Sanitize User Input" icon="broom">
+    Always clean user input before sending to AI to prevent prompt injection.
+  </Card>
+  
+  <Card title="Validate API Responses" icon="circle-check">
+    Verify AI responses before sending to users, especially for structured data.
+  </Card>
+  
+  <Card title="Protect API Keys" icon="key">
+    Never commit API keys. Use environment variables and secret management.
+  </Card>
+  
+  <Card title="Rate Limit User Requests" icon="gauge">
+    Prevent abuse by limiting AI calls per user/phone number.
+  </Card>
+</CardGroup>
+
+## Summary
+
+The Gemini AI integration provides:
+
+- **Three flexible functions** for different use cases (plain text, XML, structured)
+- **Production-ready error handling** with exponential backoff retries
+- **Easy integration** with all Africa's Talking services
+- **Fail-safe defaults** to ensure service continuity
+- **Modular design** that's easy to extend and customize
+
+Key implementation details:
+- **Configuration**: Environment variables for API key and model selection
+- **Retry logic**: 3 attempts with exponential backoff (2s, 4s, 6s)
+- **Error handling**: Four levels of validation and error recovery
+- **Response formats**: Plain text, XML for Voice/USSD, and structured (JSON/XML)
+
+The integration is designed to enhance user experiences while maintaining reliability and performance in production environments.

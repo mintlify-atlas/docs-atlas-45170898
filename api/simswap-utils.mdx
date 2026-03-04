@@ -1,0 +1,687 @@
+---
+title: SIM Swap Utilities
+description: Africa's Talking Insights API utilities for detecting SIM swap fraud
+icon: shield
+---
+
+## Overview
+
+The SIM Swap utilities module provides functions to check if a phone number has recently undergone a SIM swap. This is crucial for fraud detection and security validation before processing sensitive transactions.
+
+### Environment Variables
+
+<ParamField path="AT_USERNAME" type="string" required>
+  Your Africa's Talking username (e.g., `sandbox` or your production username)
+</ParamField>
+
+<ParamField path="AT_API_KEY" type="string" required>
+  Your Africa's Talking API key
+</ParamField>
+
+---
+
+## check_simswap
+
+Check if a phone number has been involved in a SIM swap recently.
+
+```python
+def check_simswap(phone_number: str) -> Dict[str, Any]
+```
+
+### Parameters
+
+<ParamField path="phone_number" type="string" required>
+  The phone number to check in international format (e.g., `+254712345678`)
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="Dict[str, Any]">
+  Africa's Talking API response containing SIM swap detection results
+  
+  ```python
+  {
+      "status": "Success",
+      "data": {
+          "phoneNumbers": [
+              {
+                  "phoneNumber": "+254712345678",
+                  "status": "NotSwapped",  # or "Swapped"
+                  "lastSwapDate": "01-01-1900",  # or actual date
+                  "requestId": "ATSwpid_..."
+              }
+          ]
+      }
+  }
+  ```
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.simswap_utils import check_simswap
+
+# Check if phone was recently swapped
+response = check_simswap("+254712345678")
+
+print(response)
+# {
+#     "status": "Success",
+#     "data": {
+#         "phoneNumbers": [{
+#             "phoneNumber": "+254712345678",
+#             "status": "NotSwapped",
+#             "lastSwapDate": "01-01-1900",
+#             "requestId": "ATSwpid_abc123"
+#         }]
+#     }
+# }
+
+# Extract swap status
+phone_data = response["data"]["phoneNumbers"][0]
+if phone_data["status"] == "Swapped":
+    print(f"⚠️ SIM was swapped on {phone_data['lastSwapDate']}")
+else:
+    print("✅ No recent SIM swap detected")
+```
+
+### Route Handler Integration
+
+Example from `routes/sim-swap.py:12-24`:
+
+```python
+@simswap_bp.route("/invoke-check-simswap", methods=["GET"])
+def invoke_check_simswap():
+    """
+    Check SIM swap status via query parameter.
+    Example: /invoke-check-simswap?phone=254712345678
+    """
+    phone = "+" + request.args.get("phone", "").strip()
+
+    print(f"📲 Request to check sim swap state for: {phone}")
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = check_simswap(phone)
+        return {"message": f"Sim swap check invoked for {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+---
+
+## Phone Number Validation
+
+The `check_simswap` function validates phone numbers before checking:
+
+### Valid Formats
+
+```python
+# ✅ Valid formats
+"+254712345678"  # Kenya
+"+234803456789"  # Nigeria
+"+255712345678"  # Tanzania
+"+256701234567"  # Uganda
+```
+
+### Invalid Formats
+
+```python
+# ❌ Invalid formats (will raise ValueError)
+"0712345678"     # Missing country code
+"254712345678"   # Missing '+' prefix
+"712345678"      # Missing country code and '+'
+```
+
+### Validation Helper
+
+```python
+def validate_phone_for_simswap(phone: str) -> str:
+    """Validate and format phone number."""
+    phone = phone.strip()
+    
+    # Add '+' if missing
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    
+    # Validate format
+    if not phone.startswith("+"):
+        raise ValueError(f"Invalid phone format: {phone}")
+    
+    # Validate minimum length
+    if len(phone) < 10:
+        raise ValueError(f"Phone number too short: {phone}")
+    
+    return phone
+
+# Usage
+try:
+    phone = validate_phone_for_simswap("254712345678")
+    response = check_simswap(phone)
+except ValueError as e:
+    print(f"Validation error: {e}")
+```
+
+---
+
+## Use Cases
+
+### 1. Transaction Verification
+
+Check for SIM swap before processing financial transactions:
+
+```python
+from utils.simswap_utils import check_simswap
+from utils.airtime_utils import send_airtime
+from datetime import datetime, timedelta
+
+def send_airtime_secure(phone: str, amount: float) -> dict:
+    """Send airtime only if no recent SIM swap detected."""
+    
+    # Check SIM swap status
+    swap_check = check_simswap(phone)
+    phone_data = swap_check["data"]["phoneNumbers"][0]
+    
+    if phone_data["status"] == "Swapped":
+        last_swap_date = phone_data["lastSwapDate"]
+        
+        # Parse swap date
+        swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+        days_since_swap = (datetime.now() - swap_date).days
+        
+        # Block if swapped within last 7 days
+        if days_since_swap < 7:
+            raise SecurityError(
+                f"SIM swap detected {days_since_swap} days ago. "
+                "Transaction blocked for security."
+            )
+    
+    # Proceed with airtime send
+    return send_airtime(phone, amount)
+
+# Usage
+try:
+    response = send_airtime_secure("+254712345678", 100.0)
+    print("✅ Airtime sent successfully")
+except SecurityError as e:
+    print(f"🚫 Security check failed: {e}")
+```
+
+### 2. Account Access Control
+
+Verify identity before granting account access:
+
+```python
+def verify_user_login(phone: str, password: str) -> bool:
+    """Require additional verification if SIM was recently swapped."""
+    
+    # Normal password check
+    if not verify_password(phone, password):
+        return False
+    
+    # Check for SIM swap
+    swap_check = check_simswap(phone)
+    phone_data = swap_check["data"]["phoneNumbers"][0]
+    
+    if phone_data["status"] == "Swapped":
+        last_swap = phone_data["lastSwapDate"]
+        print(f"⚠️ SIM swap detected on {last_swap}")
+        
+        # Require additional verification
+        send_otp_via_email(phone)  # Use alternative channel
+        return False  # Deny immediate access
+    
+    return True
+```
+
+### 3. Fraud Detection Pipeline
+
+Integrate SIM swap checks into fraud detection:
+
+```python
+def fraud_risk_score(phone: str, transaction_amount: float) -> dict:
+    """Calculate fraud risk score."""
+    risk_score = 0
+    flags = []
+    
+    # Check SIM swap
+    try:
+        swap_check = check_simswap(phone)
+        phone_data = swap_check["data"]["phoneNumbers"][0]
+        
+        if phone_data["status"] == "Swapped":
+            swap_date = datetime.strptime(
+                phone_data["lastSwapDate"], "%d-%m-%Y"
+            )
+            days_since = (datetime.now() - swap_date).days
+            
+            if days_since < 1:
+                risk_score += 50  # Very high risk
+                flags.append("SIM swapped within 24 hours")
+            elif days_since < 7:
+                risk_score += 30  # High risk
+                flags.append(f"SIM swapped {days_since} days ago")
+            elif days_since < 30:
+                risk_score += 10  # Medium risk
+                flags.append(f"SIM swapped {days_since} days ago")
+    
+    except Exception as e:
+        risk_score += 5
+        flags.append(f"Unable to verify SIM status: {e}")
+    
+    # Check transaction amount
+    if transaction_amount > 1000:
+        risk_score += 20
+        flags.append("High transaction amount")
+    
+    return {
+        "risk_score": risk_score,
+        "risk_level": "HIGH" if risk_score > 40 else "MEDIUM" if risk_score > 20 else "LOW",
+        "flags": flags,
+        "allow_transaction": risk_score < 50
+    }
+
+# Usage
+risk = fraud_risk_score("+254712345678", 500.0)
+if risk["allow_transaction"]:
+    print(f"✅ Transaction approved (Risk: {risk['risk_level']})")
+else:
+    print(f"🚫 Transaction blocked (Risk: {risk['risk_level']})")
+    for flag in risk["flags"]:
+        print(f"  - {flag}")
+```
+
+---
+
+## Error Handling
+
+### Common Errors
+
+```python
+try:
+    response = check_simswap("+254712345678")
+except ValueError as e:
+    # Phone number validation failed
+    print(f"Validation error: {e}")
+    # Error: Invalid phone number format
+except RuntimeError as e:
+    # API call failed
+    error_message = str(e)
+    
+    if "InvalidPhoneNumber" in error_message:
+        print("Phone number is not valid")
+    elif "UnsupportedCountry" in error_message:
+        print("SIM swap check not available in this country")
+    elif "InsufficientBalance" in error_message:
+        print("Insufficient balance for SIM swap check")
+    else:
+        print(f"SIM swap check failed: {e}")
+except Exception as e:
+    # Unexpected error
+    print(f"Unexpected error: {e}")
+```
+
+### Retry Logic
+
+```python
+import time
+
+def check_simswap_with_retry(phone: str, retries: int = 3) -> dict:
+    """Check SIM swap with automatic retry."""
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            return check_simswap(phone)
+        except RuntimeError as e:
+            last_error = e
+            
+            # Don't retry on validation errors
+            if "Invalid" in str(e):
+                raise
+            
+            if attempt < retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff
+                print(f"Retry {attempt + 1}/{retries} in {wait_time}s...")
+                time.sleep(wait_time)
+    
+    raise RuntimeError(f"Failed after {retries} attempts: {last_error}")
+```
+
+### Graceful Degradation
+
+```python
+def check_simswap_safe(phone: str, default_allow: bool = True) -> dict:
+    """Check SIM swap with graceful fallback."""
+    try:
+        response = check_simswap(phone)
+        phone_data = response["data"]["phoneNumbers"][0]
+        
+        return {
+            "checked": True,
+            "swapped": phone_data["status"] == "Swapped",
+            "last_swap_date": phone_data["lastSwapDate"],
+            "allow_transaction": phone_data["status"] != "Swapped"
+        }
+    except Exception as e:
+        print(f"⚠️ SIM swap check failed: {e}")
+        
+        # Decide whether to allow or block on failure
+        return {
+            "checked": False,
+            "swapped": None,
+            "last_swap_date": None,
+            "allow_transaction": default_allow,
+            "error": str(e)
+        }
+
+# Usage
+result = check_simswap_safe("+254712345678", default_allow=False)
+if result["allow_transaction"]:
+    print("Transaction allowed")
+else:
+    if result["swapped"]:
+        print("Blocked: SIM swap detected")
+    else:
+        print("Blocked: Unable to verify SIM status")
+```
+
+---
+
+## Status Webhook
+
+Receive asynchronous SIM swap check results (from `routes/sim-swap.py:27-58`):
+
+```python
+@simswap_bp.route("/status", methods=["POST"])
+def simswap_status():
+    """
+    Handle SIM swap status callbacks from Africa's Talking.
+    
+    Payload:
+    {
+        "status": "Swapped",
+        "lastSimSwapDate": "01-01-1900",
+        "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+        "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+        "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+    }
+    """
+    data = request.get_json(force=True)
+
+    status = data.get("status")
+    last_sim_swap_date = data.get("lastSimSwapDate")
+    provider_ref_id = data.get("providerRefId")
+    request_id = data.get("requestId")
+    transaction_id = data.get("transactionId")
+
+    # Log the status update
+    print(
+        f"📲 SIM swap status update: {status}, "
+        f"last swap: {last_sim_swap_date}, "
+        f"requestId: {request_id}"
+    )
+    
+    # Process based on status
+    if status == "Swapped":
+        print(f"⚠️ SIM swap detected on {last_sim_swap_date}")
+        # Take security action:
+        # - Flag account for review
+        # - Block pending transactions
+        # - Send security alert
+    else:
+        print("✅ No SIM swap detected")
+        # Proceed with transaction
+
+    return "OK", 200
+```
+
+---
+
+## Response Status Values
+
+| Status | Description | Recommended Action |
+|--------|-------------|-------------------|
+| `NotSwapped` | No recent SIM swap detected | Allow transaction |
+| `Swapped` | SIM was swapped recently | Review swap date, possibly block |
+| `Unknown` | Unable to determine swap status | Use alternative verification |
+| `Failed` | API check failed | Retry or use fallback |
+
+### Interpreting Swap Dates
+
+```python
+from datetime import datetime, timedelta
+
+def is_recent_swap(last_swap_date: str, days_threshold: int = 7) -> bool:
+    """Check if SIM swap occurred within threshold."""
+    # Default date for no swap
+    if last_swap_date == "01-01-1900":
+        return False
+    
+    try:
+        swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+        days_ago = (datetime.now() - swap_date).days
+        return days_ago <= days_threshold
+    except ValueError:
+        # Invalid date format
+        return True  # Err on side of caution
+
+# Usage
+response = check_simswap("+254712345678")
+phone_data = response["data"]["phoneNumbers"][0]
+
+if phone_data["status"] == "Swapped":
+    if is_recent_swap(phone_data["lastSwapDate"], days_threshold=7):
+        print("🚫 Block: Recent SIM swap detected")
+    else:
+        print("✅ Allow: SIM swap was long ago")
+```
+
+---
+
+## Best Practices
+
+### 1. Check Before Sensitive Operations
+
+```python
+# ✅ Good: Check before money transfer
+def transfer_money(from_phone: str, to_phone: str, amount: float):
+    # Verify sender's SIM
+    sender_check = check_simswap(from_phone)
+    sender_data = sender_check["data"]["phoneNumbers"][0]
+    
+    if sender_data["status"] == "Swapped":
+        raise SecurityError("Sender SIM recently swapped")
+    
+    # Proceed with transfer
+    # ...
+
+# ❌ Bad: No SIM swap check
+def transfer_money_unsafe(from_phone: str, to_phone: str, amount: float):
+    # Direct transfer without verification
+    # ...
+```
+
+### 2. Cache Results Appropriately
+
+```python
+import time
+
+# Cache with TTL
+simswap_cache = {}
+CACHE_TTL = 3600  # 1 hour
+
+def check_simswap_cached(phone: str) -> dict:
+    """Check SIM swap with caching."""
+    now = time.time()
+    
+    # Check cache
+    if phone in simswap_cache:
+        cached_data, timestamp = simswap_cache[phone]
+        if now - timestamp < CACHE_TTL:
+            print(f"Using cached SIM swap result for {phone}")
+            return cached_data
+    
+    # Fetch fresh data
+    response = check_simswap(phone)
+    simswap_cache[phone] = (response, now)
+    
+    return response
+```
+
+### 3. Combine with Other Security Checks
+
+```python
+def comprehensive_security_check(phone: str, transaction_type: str) -> dict:
+    """Run multiple security checks."""
+    results = {
+        "passed": True,
+        "checks": []
+    }
+    
+    # SIM swap check
+    try:
+        swap_result = check_simswap(phone)
+        phone_data = swap_result["data"]["phoneNumbers"][0]
+        
+        if phone_data["status"] == "Swapped":
+            results["passed"] = False
+            results["checks"].append({
+                "name": "SIM Swap",
+                "status": "FAILED",
+                "details": f"Swapped on {phone_data['lastSwapDate']}"
+            })
+        else:
+            results["checks"].append({
+                "name": "SIM Swap",
+                "status": "PASSED"
+            })
+    except Exception as e:
+        results["checks"].append({
+            "name": "SIM Swap",
+            "status": "ERROR",
+            "details": str(e)
+        })
+    
+    # Add other checks:
+    # - Device fingerprint
+    # - Location verification
+    # - Transaction history
+    # - Velocity checks
+    
+    return results
+```
+
+### 4. Log All Checks for Audit
+
+```python
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+def check_simswap_audited(phone: str, user_id: str, context: str) -> dict:
+    """Check SIM swap with full audit logging."""
+    logger.info(
+        f"SIM swap check initiated | "
+        f"user={user_id} | phone={phone} | context={context}"
+    )
+    
+    try:
+        response = check_simswap(phone)
+        phone_data = response["data"]["phoneNumbers"][0]
+        
+        logger.info(
+            f"SIM swap check completed | "
+            f"status={phone_data['status']} | "
+            f"lastSwap={phone_data['lastSwapDate']} | "
+            f"requestId={phone_data['requestId']}"
+        )
+        
+        return response
+        
+    except Exception as e:
+        logger.error(
+            f"SIM swap check failed | "
+            f"user={user_id} | error={str(e)}",
+            exc_info=True
+        )
+        raise
+```
+
+### 5. Set Appropriate Risk Thresholds
+
+```python
+# Configure risk thresholds by transaction type
+RISK_THRESHOLDS = {
+    "login": 30,           # 30 days for login
+    "password_reset": 7,   # 7 days for password reset
+    "money_transfer": 3,   # 3 days for transfers
+    "withdrawal": 1,       # 1 day for withdrawals
+}
+
+def is_swap_risky(last_swap_date: str, transaction_type: str) -> bool:
+    """Determine if swap is risky for given transaction type."""
+    if last_swap_date == "01-01-1900":
+        return False  # No swap
+    
+    threshold = RISK_THRESHOLDS.get(transaction_type, 7)
+    
+    swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+    days_ago = (datetime.now() - swap_date).days
+    
+    return days_ago <= threshold
+```
+
+---
+
+## Integration with Other Services
+
+### SMS Verification After Swap Detection
+
+```python
+from utils.simswap_utils import check_simswap
+from utils.sms_utils import send_twoway_sms
+
+def verify_with_sms_if_swapped(phone: str) -> bool:
+    """Send SMS verification if SIM was swapped."""
+    swap_check = check_simswap(phone)
+    phone_data = swap_check["data"]["phoneNumbers"][0]
+    
+    if phone_data["status"] == "Swapped":
+        # Generate OTP
+        otp = generate_otp()
+        
+        # Send via SMS
+        send_twoway_sms(
+            message=f"Your verification code is: {otp}",
+            recipient=phone
+        )
+        
+        return True  # Verification required
+    
+    return False  # No verification needed
+```
+
+### Block Airtime for Swapped SIMs
+
+```python
+from utils.simswap_utils import check_simswap
+from utils.airtime_utils import send_airtime
+
+def send_airtime_if_safe(phone: str, amount: float) -> dict:
+    """Only send airtime if no recent SIM swap."""
+    # Check SIM status first
+    swap_check = check_simswap(phone)
+    phone_data = swap_check["data"]["phoneNumbers"][0]
+    
+    if phone_data["status"] == "Swapped":
+        raise SecurityError(
+            "Cannot send airtime: SIM was recently swapped. "
+            "Please contact support."
+        )
+    
+    # Safe to proceed
+    return send_airtime(phone, amount)
+```

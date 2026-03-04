@@ -1,0 +1,531 @@
+---
+title: "AI Integration Examples"
+description: "Real-world examples of using AI with SMS, Voice, and USSD services"
+---
+
+## Overview
+
+Learn how to integrate Gemini AI with Africa's Talking services through practical examples.
+
+## SMS Examples
+
+### Basic SMS Auto-Reply
+
+Respond to incoming SMS messages with AI-generated content:
+
+```python
+from flask import Flask, request
+from utils.ai_utils import ask_gemini
+import africastalking
+
+app = Flask(__name__)
+
+# Initialize Africa's Talking
+username = "sandbox"
+api_key = "your_api_key"
+africastalking.initialize(username, api_key)
+sms = africastalking.SMS
+
+@app.route("/sms", methods=["POST"])
+def incoming_sms():
+    # Get incoming message
+    from_number = request.form.get("from")
+    message = request.form.get("text")
+    
+    try:
+        # Generate AI response
+        ai_response = ask_gemini(f"Answer this question briefly: {message}")
+        
+        # Send reply
+        sms.send(ai_response, [from_number])
+        
+    except RuntimeError as e:
+        # Fallback if AI fails
+        sms.send("Sorry, I couldn't process that right now.", [from_number])
+        print(f"AI Error: {e}")
+    
+    return "OK", 200
+```
+
+### SMS with Context Awareness
+
+Provide context to generate more relevant responses:
+
+```python
+from utils.ai_utils import ask_gemini
+
+def get_contextual_response(user_message: str, user_country: str) -> str:
+    """
+    Generate response with geographical context.
+    """
+    prompt = f"""
+    You are a helpful assistant for users in {user_country}.
+    Answer this question briefly and relevantly: {user_message}
+    Keep your response under 160 characters for SMS.
+    """
+    
+    try:
+        return ask_gemini(prompt)
+    except Exception as e:
+        print(f"Error: {e}")
+        return "Service temporarily unavailable. Please try again."
+
+# Usage
+response = get_contextual_response(
+    user_message="What's the weather like?",
+    user_country="Kenya"
+)
+```
+
+### SMS Business Inquiry Handler
+
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+def handle_business_inquiry(message: str) -> dict:
+    """
+    Extract intent and entities from customer messages.
+    """
+    prompt = f"""
+    Analyze this customer message and extract:
+    - intent (question, complaint, request, feedback)
+    - topic (product, pricing, support, shipping)
+    - urgency (low, medium, high)
+    
+    Message: {message}
+    """
+    
+    try:
+        response = ask_gemini_structured(prompt, output_format="json")
+        return json.loads(response)
+    except Exception as e:
+        return {"intent": "unknown", "topic": "general", "urgency": "medium"}
+
+# Usage
+analysis = handle_business_inquiry("My order hasn't arrived yet!")
+print(analysis)
+# {"intent": "complaint", "topic": "shipping", "urgency": "high"}
+```
+
+---
+
+## Voice Examples
+
+### AI-Powered IVR Response
+
+Use `ask_gemini_as_xml()` to generate dynamic Voice API responses:
+
+```python
+from flask import Flask, request
+from utils.ai_utils import ask_gemini_as_xml
+
+app = Flask(__name__)
+
+@app.route("/voice", methods=["POST"])
+def incoming_call():
+    # Get caller info
+    caller_number = request.form.get("callerNumber")
+    
+    # Generate personalized greeting
+    prompt = "Create a warm, professional greeting for a customer calling our support line. Keep it under 20 seconds."
+    
+    try:
+        xml_response = ask_gemini_as_xml(prompt, root_tag="Response")
+        return xml_response, 200, {"Content-Type": "application/xml"}
+        
+    except Exception as e:
+        # Fallback to static response
+        fallback_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Welcome to our support line. Please hold.</Say>
+</Response>'''
+        return fallback_xml, 200, {"Content-Type": "application/xml"}
+```
+
+### Dynamic Menu Generation
+
+Generate call menus based on business hours or user profile:
+
+```python
+from utils.ai_utils import ask_gemini_as_xml
+from datetime import datetime
+
+def generate_call_menu(caller_id: str) -> str:
+    """
+    Generate dynamic IVR menu based on time and caller.
+    """
+    current_hour = datetime.now().hour
+    is_business_hours = 8 <= current_hour < 18
+    
+    prompt = f"""
+    Create a phone menu announcement for a customer service line.
+    Business hours: {"Open" if is_business_hours else "Closed"}
+    Include options for: sales, support, and billing.
+    Keep it professional and under 30 seconds.
+    """
+    
+    try:
+        return ask_gemini_as_xml(prompt, root_tag="Response")
+    except Exception as e:
+        print(f"Menu generation failed: {e}")
+        return generate_fallback_menu()
+
+def generate_fallback_menu() -> str:
+    return '''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Press 1 for sales, 2 for support, 3 for billing.</Say>
+</Response>'''
+```
+
+### Voice with GetDigits
+
+Combine AI responses with user input:
+
+```python
+from utils.ai_utils import ask_gemini
+
+@app.route("/voice/input", methods=["POST"])
+def handle_voice_input():
+    # Get user's digit input
+    digits = request.form.get("dtmfDigits")
+    
+    # Map input to query
+    queries = {
+        "1": "Provide information about our product pricing",
+        "2": "Explain our return policy",
+        "3": "Give store hours information"
+    }
+    
+    query = queries.get(digits, "Provide general assistance")
+    
+    try:
+        # Get AI response
+        text_response = ask_gemini(f"{query}. Keep it under 30 seconds when spoken.")
+        
+        # Build XML manually for more control
+        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>{text_response}</Say>
+  <Say>Press star to return to the main menu.</Say>
+</Response>'''
+        
+        return xml, 200, {"Content-Type": "application/xml"}
+        
+    except Exception as e:
+        error_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Sorry, I couldn't retrieve that information. Please try again.</Say>
+</Response>'''
+        return error_xml, 200, {"Content-Type": "application/xml"}
+```
+
+---
+
+## USSD Examples
+
+### AI-Generated USSD Menus
+
+Create dynamic USSD menus with structured responses:
+
+```python
+from flask import Flask, request
+from utils.ai_utils import ask_gemini_structured
+import json
+
+app = Flask(__name__)
+
+@app.route("/ussd", methods=["POST"])
+def ussd_callback():
+    session_id = request.form.get("sessionId")
+    service_code = request.form.get("serviceCode")
+    phone_number = request.form.get("phoneNumber")
+    text = request.form.get("text", "")
+    
+    response_text = ""
+    
+    if text == "":
+        # First interaction - show main menu
+        response_text = "CON Welcome! What would you like to know?\n"
+        response_text += "1. Product Information\n"
+        response_text += "2. Account Balance\n"
+        response_text += "3. Ask AI Assistant"
+        
+    elif text == "3":
+        # AI Assistant option
+        response_text = "CON Ask me anything (e.g., business hours, services)\n"
+        response_text += "Type your question:"
+        
+    elif text.startswith("3*"):
+        # User entered a question
+        user_question = text.split("*", 1)[1]
+        
+        try:
+            # Get AI response optimized for USSD
+            prompt = f"""
+            Answer this question in under 160 characters for a USSD display:
+            {user_question}
+            """
+            
+            ai_response = ask_gemini(prompt)
+            response_text = f"END {ai_response}"
+            
+        except Exception as e:
+            response_text = "END Sorry, AI service unavailable. Try again later."
+    
+    else:
+        response_text = "END Invalid option"
+    
+    return response_text, 200
+```
+
+### Smart USSD Menu Builder
+
+Generate contextual menus based on user data:
+
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+def build_personalized_menu(user_profile: dict) -> str:
+    """
+    Generate USSD menu options based on user profile.
+    """
+    prompt = f"""
+    Generate 4 relevant menu options for a USSD application.
+    User profile: {json.dumps(user_profile)}
+    
+    Return as JSON array with objects containing:
+    - number: menu option number (1-4)
+    - label: short description (max 25 chars)
+    - action: internal action name
+    """
+    
+    try:
+        response = ask_gemini_structured(prompt, output_format="json")
+        menu_items = json.loads(response)
+        
+        # Build USSD menu text
+        menu_text = "CON What would you like to do?\n"
+        for item in menu_items:
+            menu_text += f"{item['number']}. {item['label']}\n"
+        
+        return menu_text
+        
+    except Exception as e:
+        # Return default menu
+        return "CON Main Menu\n1. Account\n2. Services\n3. Help\n4. Exit"
+
+# Usage
+user_profile = {
+    "account_type": "business",
+    "has_pending_order": True,
+    "country": "Kenya"
+}
+
+menu = build_personalized_menu(user_profile)
+print(menu)
+```
+
+### USSD with Data Extraction
+
+Extract structured data from user input:
+
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+def parse_transaction_request(user_input: str) -> dict:
+    """
+    Parse natural language transaction requests.
+    """
+    prompt = f"""
+    Extract transaction details from this user input:
+    "{user_input}"
+    
+    Return JSON with:
+    - type: (send_money, buy_airtime, pay_bill)
+    - amount: numeric value or null
+    - recipient: phone number or service name or null
+    - confidence: low/medium/high
+    """
+    
+    try:
+        response = ask_gemini_structured(prompt, output_format="json")
+        return json.loads(response)
+    except Exception as e:
+        return {"type": "unknown", "amount": None, "recipient": None, "confidence": "low"}
+
+# Usage
+result = parse_transaction_request("Send 100 to 0712345678")
+print(result)
+# {"type": "send_money", "amount": 100, "recipient": "0712345678", "confidence": "high"}
+
+if result["confidence"] == "high":
+    # Process transaction
+    print(f"Sending {result['amount']} to {result['recipient']}")
+else:
+    # Ask for clarification
+    print("Please confirm your transaction details")
+```
+
+---
+
+## Error Handling Patterns
+
+### Graceful Degradation
+
+Always provide fallback responses:
+
+```python
+from utils.ai_utils import ask_gemini
+
+def get_response_with_fallback(prompt: str, fallback: str) -> str:
+    """
+    Try AI, fallback to static response on failure.
+    """
+    try:
+        return ask_gemini(prompt)
+    except RuntimeError as e:
+        print(f"AI unavailable: {e}")
+        return fallback
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return fallback
+
+# Usage in SMS handler
+response = get_response_with_fallback(
+    prompt="Greet the user warmly",
+    fallback="Hello! How can we help you today?"
+)
+```
+
+### Retry with Exponential Backoff
+
+The built-in retry logic handles transient failures:
+
+```python
+# Automatic retries are built-in
+# - Attempt 1: immediate
+# - Attempt 2: wait 2 seconds
+# - Attempt 3: wait 4 seconds
+# - Attempt 4: wait 6 seconds
+# After 3 retries, raises RuntimeError
+
+try:
+    response = ask_gemini("Your prompt")
+except RuntimeError as e:
+    # All retries exhausted
+    print(f"Service unavailable after retries: {e}")
+```
+
+### Logging and Monitoring
+
+```python
+import logging
+from utils.ai_utils import ask_gemini
+
+logger = logging.getLogger(__name__)
+
+def monitored_ai_call(prompt: str) -> str:
+    """
+    AI call with comprehensive logging.
+    """
+    logger.info(f"AI request: {prompt[:100]}...")
+    
+    try:
+        response = ask_gemini(prompt)
+        logger.info(f"AI success: {len(response)} chars")
+        return response
+        
+    except RuntimeError as e:
+        logger.error(f"AI failed after retries: {e}")
+        raise
+        
+    except Exception as e:
+        logger.exception(f"Unexpected AI error: {e}")
+        raise
+```
+
+---
+
+## Performance Tips
+
+### 1. Cache Common Responses
+
+```python
+from functools import lru_cache
+from utils.ai_utils import ask_gemini
+
+@lru_cache(maxsize=100)
+def get_cached_response(prompt: str) -> str:
+    """
+    Cache AI responses for frequently asked questions.
+    """
+    return ask_gemini(prompt)
+
+# Repeated calls use cached response
+response1 = get_cached_response("What are your business hours?")
+response2 = get_cached_response("What are your business hours?")  # Cached
+```
+
+### 2. Use Appropriate Models
+
+```python
+from utils.ai_utils import ask_gemini
+
+# For simple tasks, use fast model (default)
+quick_response = ask_gemini("Say hello")  # Uses gemini-2.5-flash
+
+# For complex tasks, use powerful model
+complex_response = ask_gemini(
+    "Analyze this business strategy...",
+    model="gemini-2.0-pro"
+)
+```
+
+### 3. Keep Prompts Concise
+
+```python
+# Good: Concise prompt
+ask_gemini("Summarize benefits of our product in one sentence")
+
+# Avoid: Overly verbose prompt
+ask_gemini("""
+I would like you to please take a moment to think about our product
+and then provide a comprehensive summary of all the various benefits...
+""")
+```
+
+### 4. Parallel Processing
+
+```python
+import concurrent.futures
+from utils.ai_utils import ask_gemini
+
+def process_multiple_messages(messages: list) -> list:
+    """
+    Process multiple AI requests in parallel.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(ask_gemini, msg) for msg in messages]
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+    return results
+
+# Process 10 messages concurrently
+messages = [f"Question {i}" for i in range(10)]
+responses = process_multiple_messages(messages)
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gemini Setup" icon="key" href="/ai/gemini-setup">
+    Configure API credentials and environment
+  </Card>
+  <Card title="Utility Functions" icon="code" href="/ai/utilities">
+    Learn about AI utility function signatures
+  </Card>
+</CardGroup>

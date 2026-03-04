@@ -1,0 +1,243 @@
+---
+title: 'Voice Endpoints'
+description: 'Complete API reference for Voice service endpoints'
+---
+
+## Overview
+
+The Voice service provides endpoints for initiating phone calls and handling voice call events and instructions through Africa's Talking Voice API.
+
+---
+
+## GET /voice/
+
+Check Voice service status.
+
+### Response
+
+<ResponseField name="service" type="string">
+  Service name ("voice")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/voice/
+```
+
+### Example Response
+
+```json
+{
+  "service": "voice",
+  "status": "ready"
+}
+```
+
+---
+
+## GET /voice/invoke-call
+
+Initiate an outbound phone call to a specified number.
+
+### Query Parameters
+
+<ParamField query="phone" type="string" required>
+  Phone number to call (without the + prefix, e.g., 2547XXXXXXX)
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Success message indicating call was initiated
+</ResponseField>
+
+<ResponseField name="response" type="object">
+  Response object from Africa's Talking API
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET "http://localhost:5000/voice/invoke-call?phone=254711XXXYYY"
+```
+
+### Example Response
+
+```json
+{
+  "message": "Call initiated to +254711XXXYYY",
+  "response": {
+    "entries": [
+      {
+        "status": "Queued",
+        "phoneNumber": "+254711XXXYYY",
+        "sessionId": "ATVId_abc123"
+      }
+    ],
+    "errorMessage": "None"
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing 'phone' query parameter
+- **500** - Internal server error or Africa's Talking API error
+
+---
+
+## POST /voice/instruct
+
+Webhook endpoint that provides call flow instructions when a call is answered.
+
+### Request Body (Form Data)
+
+<ParamField body="sessionId" type="string" required>
+  Unique session ID for the call
+</ParamField>
+
+<ParamField body="callerNumber" type="string" required>
+  Phone number of the caller
+</ParamField>
+
+<ParamField body="destinationNumber" type="string" required>
+  Phone number that was called
+</ParamField>
+
+### Response
+
+Returns XML instructions in text/plain format. The XML defines the call flow using Africa's Talking Voice XML elements.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/voice/instruct \
+  -d "sessionId=ATVId_abc123" \
+  -d "callerNumber=+254711XXXYYY" \
+  -d "destinationNumber=+254700000000"
+```
+
+### Example Response
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>
+</Response>
+```
+
+### Available XML Elements
+
+You can use the following Africa's Talking Voice XML elements:
+
+- `<Say>` - Text-to-speech
+- `<Play>` - Play audio file
+- `<GetDigits>` - Collect user input
+- `<Dial>` - Connect to another phone number
+- `<Record>` - Record audio
+- `<Redirect>` - Redirect to another URL
+- `<Reject>` - Reject the call
+- `<Conference>` - Conference call
+- `<Enqueue>` - Add to call queue
+
+---
+
+## POST /voice/events
+
+Webhook callback for voice call events from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="sessionId" type="string">
+  Unique session ID for the call
+</ParamField>
+
+<ParamField body="eventType" type="string">
+  Type of event (e.g., "SessionStarted", "SessionEnded", "SessionFailed")
+</ParamField>
+
+<ParamField body="callerNumber" type="string">
+  Phone number of the caller
+</ParamField>
+
+<ParamField body="destinationNumber" type="string">
+  Phone number that was called
+</ParamField>
+
+<ParamField body="hangupCause" type="string">
+  Reason for call termination (if applicable)
+</ParamField>
+
+<ParamField body="direction" type="string">
+  Call direction ("inbound" or "outbound")
+</ParamField>
+
+<ParamField body="callStartTime" type="string">
+  Timestamp when the call started
+</ParamField>
+
+<ParamField body="durationInSeconds" type="string">
+  Call duration in seconds
+</ParamField>
+
+<ParamField body="currencyCode" type="string">
+  Currency code for the call cost
+</ParamField>
+
+<ParamField body="amount" type="string">
+  Cost of the call
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/voice/events \
+  -d "sessionId=ATVId_abc123" \
+  -d "eventType=SessionEnded" \
+  -d "callerNumber=+254711XXXYYY" \
+  -d "destinationNumber=+254700000000" \
+  -d "hangupCause=NORMAL_CLEARING" \
+  -d "direction=outbound" \
+  -d "callStartTime=2025-09-29 10:30:00" \
+  -d "durationInSeconds=45" \
+  -d "currencyCode=KES" \
+  -d "amount=5.00"
+```
+
+### Example Response
+
+```
+OK
+```
+
+### Event Types
+
+Common event types you may receive:
+
+- **SessionStarted** - Call has been initiated
+- **SessionRinging** - Phone is ringing
+- **SessionAnswered** - Call was answered
+- **SessionEnded** - Call ended normally
+- **SessionFailed** - Call failed to connect
+- **SessionTransferred** - Call was transferred
+- **SessionQueued** - Call was added to queue
+
+### Hangup Causes
+
+Common hangup causes:
+
+- **NORMAL_CLEARING** - Call ended normally
+- **USER_BUSY** - Number was busy
+- **NO_ANSWER** - No answer
+- **CALL_REJECTED** - Call was rejected
+- **INVALID_NUMBER** - Invalid phone number
+- **NETWORK_ERROR** - Network error occurred

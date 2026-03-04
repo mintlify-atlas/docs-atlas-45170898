@@ -1,0 +1,354 @@
+---
+title: 'AI Utilities'
+description: 'Gemini AI integration utilities for generating intelligent responses'
+icon: 'brain'
+---
+
+## Overview
+
+The AI utilities module provides functions to interact with Google's Gemini AI model. It includes automatic retry logic, error handling, and multiple output formats (plain text, XML, and structured responses).
+
+### Environment Variables
+
+<ParamField path="GEMINI_API_KEY" type="string" required>
+  Your Google Gemini API key for authentication
+</ParamField>
+
+<ParamField path="MODEL_ID" type="string" default="gemini-2.5-flash">
+  The Gemini model to use (e.g., `gemini-2.5-flash`, `gemini-pro`)
+</ParamField>
+
+---
+
+## ask_gemini
+
+Ask Gemini a question and return a plain text response.
+
+```python
+def ask_gemini(prompt: str, model: str = DEFAULT_MODEL) -> str
+```
+
+### Parameters
+
+<ParamField path="prompt" type="string" required>
+  The question or prompt to send to Gemini
+</ParamField>
+
+<ParamField path="model" type="string" default="gemini-2.5-flash">
+  The Gemini model to use for generating the response
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="string">
+  Plain text response from Gemini, stripped of leading/trailing whitespace
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.ai_utils import ask_gemini
+
+# Simple question
+response = ask_gemini("What is the capital of Kenya?")
+print(response)  # "Nairobi"
+
+# Using a specific model
+response = ask_gemini(
+    "Explain microservices architecture",
+    model="gemini-pro"
+)
+```
+
+### Error Handling
+
+The function implements automatic retry logic with exponential backoff:
+- **Retries**: 3 attempts by default
+- **Backoff**: 2 seconds base delay, multiplied by attempt number
+- **Exceptions**: Raises `RuntimeError` after all retries are exhausted
+
+```python
+try:
+    response = ask_gemini("Hello, Gemini!")
+except RuntimeError as e:
+    print(f"Failed to get response: {e}")
+```
+
+---
+
+## ask_gemini_as_xml
+
+Ask Gemini a question and wrap the response in an XML structure. Useful for Africa's Talking Voice API responses.
+
+```python
+def ask_gemini_as_xml(
+    prompt: str, 
+    model: str = DEFAULT_MODEL, 
+    root_tag: str = "Response"
+) -> str
+```
+
+### Parameters
+
+<ParamField path="prompt" type="string" required>
+  The question or prompt to send to Gemini
+</ParamField>
+
+<ParamField path="model" type="string" default="gemini-2.5-flash">
+  The Gemini model to use for generating the response
+</ParamField>
+
+<ParamField path="root_tag" type="string" default="Response">
+  The XML root element tag name
+</ParamField>
+
+### Returns
+
+<ResponseField name="xml_response" type="string">
+  XML-formatted response with the Gemini text wrapped in `<Say>` tags
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.ai_utils import ask_gemini_as_xml
+from flask import Response
+
+# Generate voice response
+xml_response = ask_gemini_as_xml(
+    "Tell the user about our services",
+    root_tag="Response"
+)
+
+# Returns:
+# <?xml version="1.0" encoding="UTF-8"?>
+# <Response>
+#   <Say>We offer SMS, Voice, and Airtime services...</Say>
+# </Response>
+
+# Use in Flask route
+@app.route("/voice/callback")
+def voice_callback():
+    user_input = request.values.get("dtmfDigits", "")
+    prompt = f"User pressed {user_input}. What should we tell them?"
+    
+    xml = ask_gemini_as_xml(prompt)
+    return Response(xml, mimetype="text/plain")
+```
+
+### Voice API Integration
+
+This function is designed specifically for Africa's Talking Voice API callbacks:
+
+```python
+# In routes/voice.py
+from utils.ai_utils import ask_gemini_as_xml
+
+@voice_bp.route("/ai-assistant", methods=["POST"])
+def ai_voice_assistant():
+    caller_number = request.values.get("callerNumber")
+    
+    # Generate AI-powered greeting
+    prompt = f"Greet the caller {caller_number} professionally"
+    xml = ask_gemini_as_xml(prompt)
+    
+    return Response(xml, mimetype="text/plain")
+```
+
+---
+
+## ask_gemini_structured
+
+Ask Gemini and request a structured response in a specific format (JSON, XML, etc.).
+
+```python
+def ask_gemini_structured(
+    prompt: str, 
+    model: str = DEFAULT_MODEL, 
+    output_format: str = "json"
+) -> str
+```
+
+### Parameters
+
+<ParamField path="prompt" type="string" required>
+  The question or prompt to send to Gemini
+</ParamField>
+
+<ParamField path="model" type="string" default="gemini-2.5-flash">
+  The Gemini model to use for generating the response
+</ParamField>
+
+<ParamField path="output_format" type="string" default="json">
+  Desired output format: `json`, `xml`, or any custom format instruction
+</ParamField>
+
+### Returns
+
+<ResponseField name="structured_response" type="string">
+  Response formatted according to the specified output format
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.ai_utils import ask_gemini_structured
+import json
+
+# Get JSON response
+response = ask_gemini_structured(
+    "List 3 African countries with their capitals",
+    output_format="json"
+)
+
+data = json.loads(response)
+# {
+#   "countries": [
+#     {"name": "Kenya", "capital": "Nairobi"},
+#     {"name": "Nigeria", "capital": "Abuja"},
+#     {"name": "Ghana", "capital": "Accra"}
+#   ]
+# }
+
+# Get XML response
+xml_response = ask_gemini_structured(
+    "Create a user profile for John Doe",
+    output_format="xml"
+)
+
+# Custom format
+csv_response = ask_gemini_structured(
+    "List top 5 programming languages",
+    output_format="csv with headers: name,year,paradigm"
+)
+```
+
+### SMS Integration Example
+
+Use structured responses to process SMS queries:
+
+```python
+from utils.ai_utils import ask_gemini_structured
+from utils.sms_utils import send_twoway_sms
+import json
+
+@sms_bp.route("/ai-query", methods=["POST"])
+def ai_sms_query():
+    sender = request.values.get("from")
+    text = request.values.get("text")
+    
+    # Get structured response
+    prompt = f"Answer this question concisely: {text}"
+    response = ask_gemini_structured(
+        prompt,
+        output_format="json with keys: answer, confidence"
+    )
+    
+    data = json.loads(response)
+    send_twoway_sms(data["answer"], sender)
+    
+    return "OK", 200
+```
+
+---
+
+## Internal Function: _call_gemini
+
+Internal helper function that implements retry logic and error handling. Not intended for direct use.
+
+```python
+def _call_gemini(prompt: str, model: str, retries: int = 3, delay: float = 2.0)
+```
+
+### Retry Behavior
+
+- **Exponential Backoff**: Each retry waits `delay * attempt_number` seconds
+- **Error Types**: Handles `GoogleAPIError`, `ValueError`, and generic exceptions
+- **Logging**: Prints warning messages for each failed attempt
+
+### Configuration
+
+The retry parameters are hardcoded but can be modified in the source:
+
+```python
+# Default retry configuration
+retries = 3          # Number of retry attempts
+delay = 2.0          # Base delay in seconds
+# Actual delays: 2s, 4s, 6s (exponential backoff)
+```
+
+---
+
+## Error Handling Best Practices
+
+### Handle API Failures
+
+```python
+from utils.ai_utils import ask_gemini
+
+def safe_ai_query(user_question: str, fallback: str = "Unable to process request"):
+    try:
+        return ask_gemini(user_question)
+    except RuntimeError as e:
+        print(f"AI query failed: {e}")
+        return fallback
+```
+
+### Validate API Key
+
+The module validates the API key on import:
+
+```python
+# Raises ValueError if GEMINI_API_KEY is missing
+import utils.ai_utils  # Will fail if key not set
+```
+
+### Handle Empty Responses
+
+```python
+response = ask_gemini("Question")
+if not response or response.strip() == "":
+    print("Received empty response from Gemini")
+```
+
+---
+
+## Performance Considerations
+
+### Response Time
+
+- **Typical**: 1-3 seconds for simple queries
+- **Complex**: 3-10 seconds for longer prompts
+- **Failures**: Up to 42 seconds with full retry cycle (2s + 4s + 6s × 3 retries)
+
+### Cost Optimization
+
+```python
+# Use flash model for simple queries (faster, cheaper)
+response = ask_gemini("Simple question", model="gemini-2.5-flash")
+
+# Use pro model only for complex reasoning
+response = ask_gemini(
+    "Complex analysis required",
+    model="gemini-pro"
+)
+```
+
+### Rate Limiting
+
+Implement rate limiting for production use:
+
+```python
+from functools import lru_cache
+import time
+
+@lru_cache(maxsize=100)
+def cached_ai_query(prompt: str, ttl_hash: int = None):
+    return ask_gemini(prompt)
+
+def get_ttl_hash(seconds: int = 3600):
+    return round(time.time() / seconds)
+
+# Cache responses for 1 hour
+response = cached_ai_query("Question", ttl_hash=get_ttl_hash())
+```

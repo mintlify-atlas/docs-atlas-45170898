@@ -1,0 +1,367 @@
+---
+title: 'SMS Service'
+description: 'Send bulk SMS, handle two-way messaging, and manage delivery reports'
+---
+
+## Overview
+
+The SMS service provides comprehensive messaging capabilities including bulk SMS, two-way messaging, delivery reports, opt-out management, and subscription notifications.
+
+## Service Status
+
+### Check SMS Service Status
+
+<CodeGroup>
+```bash GET /sms/
+curl http://localhost:8000/sms/
+```
+</CodeGroup>
+
+<ResponseField name="service" type="string">
+  Service name ("sms")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+**Response Example**
+```json
+{
+  "service": "sms",
+  "status": "ready"
+}
+```
+
+---
+
+## Sending SMS
+
+### Send Bulk SMS
+
+Send SMS messages to one or more recipients using the bulk SMS API.
+
+<CodeGroup>
+```bash GET /sms/invoke-bulk-sms
+curl "http://localhost:8000/sms/invoke-bulk-sms?phone=254711XXXYYY&message=Hello%20World"
+```
+</CodeGroup>
+
+<ParamField query="phone" type="string" required>
+  Recipient phone number (without + prefix)
+  
+  Example: `254711XXXYYY`
+</ParamField>
+
+<ParamField query="message" type="string" default="Hello from Africa's Talking!">
+  Message content to send
+</ParamField>
+
+**Response Example**
+```json
+{
+  "message": "SMS sent to +254711XXXYYY",
+  "response": {
+    "SMSMessageData": {
+      "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+      "Recipients": [
+        {
+          "statusCode": 101,
+          "number": "+254711XXXYYY",
+          "cost": "KES 0.8000",
+          "status": "Success",
+          "messageId": "ATXid_..."
+        }
+      ]
+    }
+  }
+}
+```
+
+**Error Response**
+```json
+{
+  "error": "Missing 'phone' query parameter"
+}
+```
+
+---
+
+### Send Two-Way SMS
+
+Send SMS using a dedicated shortcode that supports two-way messaging.
+
+<CodeGroup>
+```bash GET /sms/invoke-twoway-sms
+curl "http://localhost:8000/sms/invoke-twoway-sms?phone=254711XXXYYY&message=Hello%20World"
+```
+</CodeGroup>
+
+<ParamField query="phone" type="string" required>
+  Recipient phone number (without + prefix)
+</ParamField>
+
+<ParamField query="message" type="string" default="Hello from Africa's Talking!">
+  Message content to send
+</ParamField>
+
+**Response Example**
+```json
+{
+  "message": "SMS sent to +254711XXXYYY",
+  "response": {
+    "SMSMessageData": {
+      "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+      "Recipients": [...]
+    }
+  }
+}
+```
+
+---
+
+## Webhooks
+
+### Two-Way SMS Callback
+
+Receive and respond to incoming SMS messages from users.
+
+<CodeGroup>
+```bash POST /sms/twoway
+curl -X POST http://localhost:8000/sms/twoway \
+  -d "linkId=SampleLinkId123" \
+  -d "text=Hello" \
+  -d "to=12345" \
+  -d "id=ATSid_123" \
+  -d "date=2026-03-04+10:30:00" \
+  -d "from=%2B254711000111"
+```
+</CodeGroup>
+
+<ParamField body="linkId" type="string" required>
+  Unique identifier linking related messages
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  Message content from the user
+</ParamField>
+
+<ParamField body="to" type="string" required>
+  Shortcode the message was sent to
+</ParamField>
+
+<ParamField body="id" type="string" required>
+  Africa's Talking message ID
+</ParamField>
+
+<ParamField body="date" type="string" required>
+  Timestamp when message was received
+</ParamField>
+
+<ParamField body="from" type="string" required>
+  Sender's phone number
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sms.py:56-77
+@sms_bp.route("/twoway", methods=["POST"])
+def twoway_callback():
+    linkId = request.values.get("linkId")
+    text = request.values.get("text")
+    to = request.values.get("to")
+    msg_id = request.values.get("id")
+    date = request.values.get("date")
+    sender = request.values.get("from")
+
+    if not linkId or not text or not to or not msg_id or not date or not sender:
+        return "BAD", 400
+    
+    print(f"Received 2-way SMS from {sender}: {text}")
+
+    # Respond with a new SMS back to the sender
+    send_twoway_sms(
+        message=f'This is a response to: "{text}"',
+        recipient=sender,
+    )
+
+    return "GOOD", 200
+```
+
+**Response**
+- Success: `"GOOD"` with status code 200
+- Error: `"BAD"` with status code 400
+
+---
+
+### Delivery Reports
+
+Receive notifications about SMS delivery status.
+
+<CodeGroup>
+```bash POST /sms/delivery-reports
+curl -X POST http://localhost:8000/sms/delivery-reports \
+  -d "id=ATXid_123" \
+  -d "status=Success" \
+  -d "phoneNumber=%2B254711XXXYYY" \
+  -d "networkCode=63902" \
+  -d "failureReason=" \
+  -d "retryCount=0"
+```
+</CodeGroup>
+
+<ParamField body="id" type="string" required>
+  Message ID from the send response
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Delivery status (e.g., "Success", "Failed")
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Recipient's phone number
+</ParamField>
+
+<ParamField body="networkCode" type="string" required>
+  Mobile network operator code
+</ParamField>
+
+<ParamField body="failureReason" type="string">
+  Reason for failure (if status is "Failed")
+</ParamField>
+
+<ParamField body="retryCount" type="string">
+  Number of retry attempts
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sms.py:80-100
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📩 SMS Delivery Report Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    return Response("OK", status=200)
+```
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+### Opt-Out Notifications
+
+Receive notifications when users opt out of bulk SMS.
+
+<CodeGroup>
+```bash POST /sms/opt-out
+curl -X POST http://localhost:8000/sms/opt-out \
+  -d "senderId=MyBrand" \
+  -d "phoneNumber=%2B254711XXXYYY"
+```
+</CodeGroup>
+
+<ParamField body="senderId" type="string" required>
+  Your sender ID or brand name
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number that opted out
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sms.py:103-119
+@sms_bp.route("/opt-out", methods=["POST"])
+def sms_opt_out():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("🚫 SMS Opt-Out Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    return Response("OK", status=200)
+```
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+### Subscription Notifications
+
+Receive notifications about premium SMS subscription updates.
+
+<CodeGroup>
+```bash POST /sms/subscription
+curl -X POST http://localhost:8000/sms/subscription \
+  -d "phoneNumber=%2B254711000111" \
+  -d "shortCode=12345" \
+  -d "keyword=NEWS" \
+  -d "updateType=addition"
+```
+</CodeGroup>
+
+<ParamField body="phoneNumber" type="string" required>
+  Subscriber's phone number
+</ParamField>
+
+<ParamField body="shortCode" type="string" required>
+  Premium shortcode
+</ParamField>
+
+<ParamField body="keyword" type="string" required>
+  Subscription keyword
+</ParamField>
+
+<ParamField body="updateType" type="string" required>
+  Type of update: `"addition"` or `"deletion"`
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sms.py:122-151
+@sms_bp.route("/subscription", methods=["POST"])
+def sms_subscription():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("⭐ SMS Subscription Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    # Extract values
+    phone_number = payload.get("phoneNumber")
+    short_code = payload.get("shortCode")
+    keyword = payload.get("keyword")
+    update_type = payload.get("updateType")
+
+    print(
+        f"➡️ Subscription update for {phone_number}: "
+        f"{update_type.upper()} to '{keyword}' on shortcode {short_code}"
+    )
+
+    return Response("OK", status=200)
+```
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Voice Service" icon="phone" href="/services/voice">
+    Learn how to make calls and handle voice events
+  </Card>
+  <Card title="Airtime Service" icon="mobile" href="/services/airtime">
+    Send airtime to users programmatically
+  </Card>
+</CardGroup>

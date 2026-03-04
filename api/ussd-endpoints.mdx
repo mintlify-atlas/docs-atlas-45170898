@@ -1,0 +1,219 @@
+---
+title: 'USSD Endpoints'
+description: 'Complete API reference for USSD service endpoints'
+---
+
+## Overview
+
+The USSD service provides endpoints for handling interactive USSD sessions and receiving end-of-session status notifications from Africa's Talking USSD API.
+
+---
+
+## GET /ussd/
+
+Check USSD service status.
+
+### Response
+
+Returns a simple text message.
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/ussd/
+```
+
+### Example Response
+
+```
+Welcome to the USSD service
+```
+
+---
+
+## POST /ussd/session
+
+Handle interactive USSD session requests from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="sessionId" type="string" required>
+  Unique session ID for the USSD session
+</ParamField>
+
+<ParamField body="serviceCode" type="string" required>
+  USSD code dialed by the user (e.g., *123#)
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number of the user
+</ParamField>
+
+<ParamField body="text" type="string" default="">
+  User input concatenated with asterisks (*). Empty string for first request.
+</ParamField>
+
+### Response
+
+Returns a text response starting with either:
+- **CON** - Continue session (show menu and wait for input)
+- **END** - End session (show final message)
+
+### Example Request (Initial)
+
+```bash
+curl -X POST http://localhost:5000/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*123#" \
+  -d "phoneNumber=+254711XXXYYY" \
+  -d "text="
+```
+
+### Example Response (Initial)
+
+```
+CON What would you want to check 
+1. My Account 
+2. My phone number
+```
+
+### Example Request (User Selected Option 1)
+
+```bash
+curl -X POST http://localhost:5000/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*123#" \
+  -d "phoneNumber=+254711XXXYYY" \
+  -d "text=1"
+```
+
+### Example Response (Continue)
+
+```
+CON Choose account information you want to view 
+1. Account number
+```
+
+### Example Request (User Selected 1*1)
+
+```bash
+curl -X POST http://localhost:5000/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*123#" \
+  -d "phoneNumber=+254711XXXYYY" \
+  -d "text=1*1"
+```
+
+### Example Response (End)
+
+```
+END Your account number is ACC1001
+```
+
+### USSD Flow Logic
+
+The implementation demonstrates a multi-level USSD menu:
+
+1. **Empty text** - Show main menu
+2. **text = "1"** - Show account submenu
+3. **text = "2"** - Display phone number and end
+4. **text = "1*1"** - Display account number and end
+5. **Other input** - Show invalid choice and end
+
+### Response Format
+
+- Each response must start with `CON` or `END`
+- Use `\n` for new lines in the menu
+- `CON` responses keep the session active
+- `END` responses terminate the session
+- User selections are concatenated with `*` separator
+
+---
+
+## POST /ussd/status
+
+Webhook callback for USSD end-of-session status notifications.
+
+### Request Body (Form Data)
+
+<ParamField body="date" type="string" required>
+  Timestamp of the session end (e.g., "2025-09-29 12:00:00")
+</ParamField>
+
+<ParamField body="sessionId" type="string" required>
+  Unique session ID
+</ParamField>
+
+<ParamField body="serviceCode" type="string" required>
+  USSD code that was dialed
+</ParamField>
+
+<ParamField body="networkCode" type="string" required>
+  Mobile network code
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number of the user
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Session status (e.g., "Success", "Failed")
+</ParamField>
+
+<ParamField body="cost" type="string">
+  Cost of the USSD session (e.g., "KES 0.10")
+</ParamField>
+
+<ParamField body="durationInMillis" type="string">
+  Session duration in milliseconds
+</ParamField>
+
+<ParamField body="hopsCount" type="string">
+  Number of hops (requests) in the session
+</ParamField>
+
+<ParamField body="input" type="string">
+  Complete user input path (e.g., "1*1")
+</ParamField>
+
+<ParamField body="lastAppResponse" type="string">
+  Last response sent to the user
+</ParamField>
+
+<ParamField body="errorMessage" type="string">
+  Error message (if status is "Failed")
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/ussd/status \
+  -d "date=2025-09-29 12:00:00" \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*123#" \
+  -d "networkCode=63902" \
+  -d "phoneNumber=+254711000111" \
+  -d "status=Success" \
+  -d "cost=KES 0.10" \
+  -d "durationInMillis=12345" \
+  -d "hopsCount=3" \
+  -d "input=1*1" \
+  -d "lastAppResponse=END Your account number is ACC1001"
+```
+
+### Example Response
+
+```
+OK
+```
+
+### Status Values
+
+- **Success** - Session completed successfully
+- **Failed** - Session failed (check errorMessage field)
+- **TimedOut** - Session timed out
+- **Cancelled** - User cancelled the session

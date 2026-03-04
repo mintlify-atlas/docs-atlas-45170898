@@ -1,0 +1,509 @@
+---
+title: 'SIM Swap Service'
+description: 'Check SIM swap status to prevent fraud and secure transactions'
+---
+
+## Overview
+
+The SIM Swap service helps you detect if a user's SIM card has been recently swapped, which is crucial for preventing fraud in financial transactions and account security.
+
+## Service Status
+
+### Check SIM Swap Service Status
+
+<CodeGroup>
+```bash GET /sim-swap/
+curl http://localhost:8000/sim-swap/
+```
+</CodeGroup>
+
+<ResponseField name="service" type="string">
+  Service name ("sim-swap")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+**Response Example**
+```json
+{
+  "service": "sim-swap",
+  "status": "ready"
+}
+```
+
+---
+
+## Checking SIM Swap Status
+
+### Check SIM Swap
+
+Query whether a phone number has had a recent SIM swap.
+
+<CodeGroup>
+```bash GET /sim-swap/invoke-check-simswap
+curl "http://localhost:8000/sim-swap/invoke-check-simswap?phone=254711XXXYYY"
+```
+</CodeGroup>
+
+<ParamField query="phone" type="string" required>
+  Phone number to check (without + prefix)
+  
+  Example: `254711XXXYYY`
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sim-swap.py:12-24
+@simswap_bp.route("/invoke-check-simswap", methods=["GET"])
+def invoke_check_simswap():
+    phone = "+" + request.args.get("phone", "").strip()
+
+    print(f"📲 Request to check sim swap state for: {phone}")
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = check_simswap(phone)
+        return {"message": f"Sim swap check invoked for {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+**Response Example**
+```json
+{
+  "message": "Sim swap check invoked for +254711XXXYYY",
+  "response": {
+    "status": "Queued",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d"
+  }
+}
+```
+
+**Error Response**
+```json
+{
+  "error": "Missing 'phone' query parameter"
+}
+```
+
+---
+
+## SIM Swap Status Callback
+
+### Handle Status Callback
+
+Receive the SIM swap check results asynchronously.
+
+<CodeGroup>
+```bash POST /sim-swap/status
+curl -X POST http://localhost:8000/sim-swap/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "Swapped",
+    "lastSimSwapDate": "01-01-1900",
+    "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+  }'
+```
+</CodeGroup>
+
+<ParamField body="status" type="string" required>
+  SIM swap status
+  
+  Possible values:
+  - `"Swapped"` - SIM card was recently swapped
+  - `"NotSwapped"` - No recent SIM swap detected
+  - `"Error"` - Unable to determine status
+</ParamField>
+
+<ParamField body="lastSimSwapDate" type="string" required>
+  Date of last SIM swap (format: DD-MM-YYYY)
+  
+  Returns `"01-01-1900"` if never swapped or unknown
+</ParamField>
+
+<ParamField body="providerRefId" type="string" required>
+  Mobile network operator's reference ID
+</ParamField>
+
+<ParamField body="requestId" type="string" required>
+  Africa's Talking request ID (matches the ID from the check request)
+</ParamField>
+
+<ParamField body="transactionId" type="string" required>
+  Transaction identifier (matches the ID from the check request)
+</ParamField>
+
+**Implementation**
+```python
+# From routes/sim-swap.py:27-58
+@simswap_bp.route("/status", methods=["POST"])
+def simswap_status():
+    data = request.get_json(force=True)
+
+    status = data.get("status")
+    last_sim_swap_date = data.get("lastSimSwapDate")
+    provider_ref_id = data.get("providerRefId")
+    request_id = data.get("requestId")
+    transaction_id = data.get("transactionId")
+
+    # Log or process the status update
+    print(
+        f"📲 SIM swap status update: {status}, "
+        f"last swap: {last_sim_swap_date}, "
+        f"providerRefId: {provider_ref_id}, "
+        f"requestId: {request_id}, "
+        f"transactionId: {transaction_id}"
+    )
+
+    # Respond with 200 OK and body "OK"
+    return "OK", 200
+```
+
+**Payload Examples**
+
+<CodeGroup>
+```json Swapped
+{
+  "status": "Swapped",
+  "lastSimSwapDate": "15-03-2026",
+  "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+  "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+  "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+}
+```
+
+```json Not Swapped
+{
+  "status": "NotSwapped",
+  "lastSimSwapDate": "01-01-1900",
+  "providerRefId": "ab1c-23de-456f-g789-h012i345j678",
+  "requestId": "ATSwpid_9876543210fedcba",
+  "transactionId": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+</CodeGroup>
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+## SIM Swap Check Flow
+
+<Steps>
+  <Step title="Initiate Check">
+    Send a GET request to `/sim-swap/invoke-check-simswap` with the phone number
+  </Step>
+  
+  <Step title="Receive Transaction ID">
+    Africa's Talking returns a transaction ID and queues the check
+    
+    ```json
+    {
+      "status": "Queued",
+      "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5",
+      "requestId": "ATSwpid_..."
+    }
+    ```
+  </Step>
+  
+  <Step title="Query Network Provider">
+    AT queries the mobile network operator for SIM swap history
+  </Step>
+  
+  <Step title="Receive Callback">
+    Your `/sim-swap/status` endpoint receives the results
+    
+    ```json
+    {
+      "status": "Swapped",
+      "lastSimSwapDate": "15-03-2026"
+    }
+    ```
+  </Step>
+  
+  <Step title="Take Action">
+    Based on the result, allow or block the transaction
+  </Step>
+</Steps>
+
+---
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Prevent Account Takeover" icon="shield">
+    Block login attempts if SIM was recently swapped
+  </Card>
+  
+  <Card title="Secure Money Transfers" icon="money-bill-transfer">
+    Require additional verification for transactions after SIM swap
+  </Card>
+  
+  <Card title="Protect Airtime Purchases" icon="mobile">
+    Prevent fraudulent airtime purchases to recently swapped numbers
+  </Card>
+  
+  <Card title="Account Recovery" icon="key">
+    Add extra security steps for password resets
+  </Card>
+</CardGroup>
+
+---
+
+## Integration Examples
+
+### Secure Transaction Flow
+
+```python
+from datetime import datetime, timedelta
+
+@app.route("/transfer-money", methods=["POST"])
+def transfer_money():
+    phone = request.json.get("phone")
+    amount = request.json.get("amount")
+    
+    # Check SIM swap status
+    swap_result = check_simswap(phone)
+    
+    # Store the transaction ID for later matching
+    transaction_id = swap_result["transactionId"]
+    pending_transfers[transaction_id] = {
+        "phone": phone,
+        "amount": amount,
+        "timestamp": datetime.now()
+    }
+    
+    return {
+        "message": "Verifying security...",
+        "transactionId": transaction_id
+    }
+
+@simswap_bp.route("/status", methods=["POST"])
+def simswap_status():
+    data = request.get_json(force=True)
+    
+    status = data.get("status")
+    transaction_id = data.get("transactionId")
+    last_swap_date = data.get("lastSimSwapDate")
+    
+    # Retrieve the pending transfer
+    transfer = pending_transfers.get(transaction_id)
+    
+    if not transfer:
+        return "OK", 200
+    
+    # Check if SIM was swapped recently (within 7 days)
+    if status == "Swapped":
+        swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+        days_since_swap = (datetime.now() - swap_date).days
+        
+        if days_since_swap < 7:
+            # Reject the transaction
+            notify_user(
+                transfer["phone"],
+                "Transaction blocked: Recent SIM swap detected. "
+                "Please contact support."
+            )
+            del pending_transfers[transaction_id]
+            return "OK", 200
+    
+    # Process the transfer
+    process_transfer(
+        transfer["phone"],
+        transfer["amount"]
+    )
+    
+    del pending_transfers[transaction_id]
+    return "OK", 200
+```
+
+### Login Security Check
+
+```python
+@app.route("/login", methods=["POST"])
+def login():
+    phone = request.json.get("phone")
+    password = request.json.get("password")
+    
+    # Verify credentials
+    user = authenticate(phone, password)
+    if not user:
+        return {"error": "Invalid credentials"}, 401
+    
+    # Check SIM swap status
+    swap_result = check_simswap(phone)
+    
+    # Store for callback processing
+    login_attempts[swap_result["transactionId"]] = {
+        "user_id": user.id,
+        "phone": phone
+    }
+    
+    return {
+        "message": "Verifying device security...",
+        "transactionId": swap_result["transactionId"]
+    }
+
+@simswap_bp.route("/status", methods=["POST"])
+def simswap_status():
+    data = request.get_json(force=True)
+    transaction_id = data.get("transactionId")
+    
+    attempt = login_attempts.get(transaction_id)
+    if not attempt:
+        return "OK", 200
+    
+    status = data.get("status")
+    last_swap_date = data.get("lastSimSwapDate")
+    
+    if status == "Swapped":
+        swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+        days_since_swap = (datetime.now() - swap_date).days
+        
+        if days_since_swap < 30:
+            # Require additional verification
+            send_sms(
+                attempt["phone"],
+                f"Login detected. Verify: {generate_otp(attempt['user_id'])}"
+            )
+            # Don't auto-login, wait for OTP verification
+        else:
+            # Normal login
+            create_session(attempt["user_id"])
+    else:
+        # No recent swap, proceed with login
+        create_session(attempt["user_id"])
+    
+    del login_attempts[transaction_id]
+    return "OK", 200
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Set Appropriate Thresholds">
+    Define risk thresholds based on your use case:
+    
+    - **High Security** (banking, transfers): Block if swapped within 30 days
+    - **Medium Security** (purchases): Require extra verification if swapped within 7 days
+    - **Low Security** (content access): Allow but log if swapped within 3 days
+    
+    ```python
+    SECURITY_THRESHOLDS = {
+        "high": 30,      # days
+        "medium": 7,
+        "low": 3
+    }
+    
+    def is_safe_for_transaction(last_swap_date, security_level="medium"):
+        if last_swap_date == "01-01-1900":
+            return True  # Never swapped
+        
+        swap_date = datetime.strptime(last_swap_date, "%d-%m-%Y")
+        days_since = (datetime.now() - swap_date).days
+        
+        return days_since >= SECURITY_THRESHOLDS[security_level]
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Asynchronous Responses">
+    SIM swap checks are asynchronous. Store request IDs and match them with callbacks.
+    
+    ```python
+    import redis
+    
+    r = redis.Redis()
+    
+    # When initiating check
+    result = check_simswap(phone)
+    r.setex(
+        f"simswap:{result['transactionId']}",
+        300,  # 5 minutes TTL
+        json.dumps({"user_id": user_id, "action": "transfer"})
+    )
+    
+    # In callback handler
+    context = r.get(f"simswap:{transaction_id}")
+    if context:
+        data = json.loads(context)
+        # Process based on stored context
+    ```
+  </Accordion>
+
+  <Accordion title="Provide Clear User Communication">
+    When blocking transactions, explain why and provide alternatives.
+    
+    ```python
+    if days_since_swap < 7:
+        send_sms(
+            phone,
+            "For your security, this transaction requires verification "
+            "due to recent SIM change. Please visit our branch or "
+            "call support at 0711000111."
+        )
+    ```
+  </Accordion>
+
+  <Accordion title="Log All Checks">
+    Maintain audit logs for security and compliance.
+    
+    ```python
+    @simswap_bp.route("/status", methods=["POST"])
+    def simswap_status():
+        data = request.get_json(force=True)
+        
+        # Log to database
+        db.insert(
+            "sim_swap_checks",
+            {
+                "transaction_id": data["transactionId"],
+                "status": data["status"],
+                "last_swap_date": data["lastSimSwapDate"],
+                "checked_at": datetime.now(),
+                "provider_ref": data["providerRefId"]
+            }
+        )
+        
+        return "OK", 200
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Unknown States">
+    Network providers may not always have swap data. Have fallback logic.
+    
+    ```python
+    if status == "Error" or last_swap_date == "01-01-1900":
+        # Unknown state - apply medium security
+        send_otp_verification(phone)
+    elif status == "Swapped":
+        # Known swap - apply high security
+        require_in_person_verification(phone)
+    else:
+        # Not swapped - normal flow
+        process_transaction(phone)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Airtime Service" icon="mobile" href="/services/airtime">
+    Combine with airtime service for secure transfers
+  </Card>
+  <Card title="SMS Service" icon="message" href="/services/sms">
+    Send verification codes when SIM swap is detected
+  </Card>
+</CardGroup>

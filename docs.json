@@ -1,122 +1,103 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Africa's Talking AI Integration Course",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f38214",
+    "light": "#27813c",
+    "dark": "#f38214"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/36ee6d70-86a5-49b6-bed2-3126c86b8add.png",
+  "logo": {
+    "light": "https://media.brand.dev/36ee6d70-86a5-49b6-bed2-3126c86b8add.png",
+    "dark": "https://media.brand.dev/36ee6d70-86a5-49b6-bed2-3126c86b8add.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/DaggieBlanqx/Google-Africastalking-AI-Course"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/DaggieBlanqx/Google-Africastalking-AI-Course"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "setup"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/webhooks",
+              "concepts/ai-integration"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "API Services",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "services/sms",
+              "services/voice",
+              "services/airtime",
+              "services/ussd",
+              "services/sim-swap"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "AI Integration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "ai/gemini-setup",
+              "ai/utilities",
+              "ai/examples"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/environment-setup",
+              "guides/tunneling",
+              "guides/webhook-configuration",
+              "guides/testing"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Endpoints",
             "pages": [
-              "api-reference/introduction"
+              "api/sms-endpoints",
+              "api/voice-endpoints",
+              "api/airtime-endpoints",
+              "api/ussd-endpoints",
+              "api/simswap-endpoints"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Utilities",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/ai-utils",
+              "api/sms-utils",
+              "api/voice-utils",
+              "api/airtime-utils",
+              "api/simswap-utils"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

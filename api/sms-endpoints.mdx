@@ -1,0 +1,346 @@
+---
+title: 'SMS Endpoints'
+description: 'Complete API reference for SMS service endpoints'
+---
+
+## Overview
+
+The SMS service provides endpoints for sending bulk SMS, two-way SMS, and handling various SMS-related callbacks including delivery reports, opt-outs, and subscription notifications.
+
+---
+
+## GET /sms/
+
+Check SMS service status.
+
+### Response
+
+<ResponseField name="service" type="string">
+  Service name ("sms")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/sms/
+```
+
+### Example Response
+
+```json
+{
+  "service": "sms",
+  "status": "ready"
+}
+```
+
+---
+
+## GET /sms/invoke-bulk-sms
+
+Send a bulk SMS to a phone number.
+
+### Query Parameters
+
+<ParamField query="phone" type="string" required>
+  Phone number to send SMS to (without the + prefix, e.g., 2547XXXXXXX)
+</ParamField>
+
+<ParamField query="message" type="string" default="Hello from Africa's Talking!">
+  Message content to send
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Success message indicating SMS was sent
+</ResponseField>
+
+<ResponseField name="response" type="object">
+  Response object from Africa's Talking API
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET "http://localhost:5000/sms/invoke-bulk-sms?phone=254711XXXYYY&message=Hello%20World"
+```
+
+### Example Response
+
+```json
+{
+  "message": "SMS sent to +254711XXXYYY",
+  "response": {
+    "SMSMessageData": {
+      "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+      "Recipients": [
+        {
+          "statusCode": 101,
+          "number": "+254711XXXYYY",
+          "status": "Success",
+          "cost": "KES 0.8000",
+          "messageId": "ATXid_abc123"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing 'phone' query parameter
+- **500** - Internal server error or Africa's Talking API error
+
+---
+
+## GET /sms/invoke-twoway-sms
+
+Send a two-way SMS to a phone number.
+
+### Query Parameters
+
+<ParamField query="phone" type="string" required>
+  Phone number to send SMS to (without the + prefix, e.g., 2547XXXXXXX)
+</ParamField>
+
+<ParamField query="message" type="string" default="Hello from Africa's Talking!">
+  Message content to send
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Success message indicating SMS was sent
+</ResponseField>
+
+<ResponseField name="response" type="object">
+  Response object from Africa's Talking API
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X GET "http://localhost:5000/sms/invoke-twoway-sms?phone=254711XXXYYY&message=Hello%20World"
+```
+
+### Example Response
+
+```json
+{
+  "message": "SMS sent to +254711XXXYYY",
+  "response": {
+    "SMSMessageData": {
+      "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+      "Recipients": [
+        {
+          "statusCode": 101,
+          "number": "+254711XXXYYY",
+          "status": "Success",
+          "cost": "KES 0.8000",
+          "messageId": "ATXid_abc123"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Error Codes
+
+- **400** - Missing 'phone' query parameter
+- **500** - Internal server error or Africa's Talking API error
+
+---
+
+## POST /sms/twoway
+
+Webhook callback for receiving two-way SMS messages from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="linkId" type="string" required>
+  Link ID connecting this incoming message to a previous outbound message
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  The message text received from the user
+</ParamField>
+
+<ParamField body="to" type="string" required>
+  The shortcode or phone number the message was sent to
+</ParamField>
+
+<ParamField body="id" type="string" required>
+  Unique message ID
+</ParamField>
+
+<ParamField body="date" type="string" required>
+  Timestamp of when the message was received
+</ParamField>
+
+<ParamField body="from" type="string" required>
+  Phone number of the sender
+</ParamField>
+
+### Response
+
+Returns "GOOD" with status 200 on success, or "BAD" with status 400 if required fields are missing.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/sms/twoway \
+  -d "linkId=SampleLinkId12345" \
+  -d "text=Hello" \
+  -d "to=21515" \
+  -d "id=ATXid_SampleMsgId123" \
+  -d "date=2025-09-29+10:30:00" \
+  -d "from=+254711XXXYYY"
+```
+
+### Example Response
+
+```
+GOOD
+```
+
+### Error Codes
+
+- **400** - Missing required fields (linkId, text, to, id, date, or from)
+
+---
+
+## POST /sms/delivery-reports
+
+Webhook callback for SMS delivery reports from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="id" type="string" required>
+  Message ID of the SMS
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Delivery status (e.g., "Success", "Failed")
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number the SMS was sent to
+</ParamField>
+
+<ParamField body="networkCode" type="string" required>
+  Mobile network code
+</ParamField>
+
+<ParamField body="failureReason" type="string">
+  Reason for failure (if status is "Failed")
+</ParamField>
+
+<ParamField body="retryCount" type="string">
+  Number of retry attempts
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/sms/delivery-reports \
+  -d "id=ATXid_SampleMsgId123" \
+  -d "status=Success" \
+  -d "phoneNumber=+254711XXXYYY" \
+  -d "networkCode=63902" \
+  -d "retryCount=0"
+```
+
+### Example Response
+
+```
+OK
+```
+
+---
+
+## POST /sms/opt-out
+
+Webhook callback for bulk SMS opt-out notifications from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="senderId" type="string" required>
+  Sender ID (brand name) that the user opted out from
+</ParamField>
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number that opted out
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/sms/opt-out \
+  -d "senderId=MyBrand" \
+  -d "phoneNumber=+254711XXXYYY"
+```
+
+### Example Response
+
+```
+OK
+```
+
+---
+
+## POST /sms/subscription
+
+Webhook callback for premium SMS subscription notifications from Africa's Talking.
+
+### Request Body (Form Data)
+
+<ParamField body="phoneNumber" type="string" required>
+  Phone number that subscribed or unsubscribed
+</ParamField>
+
+<ParamField body="shortCode" type="string" required>
+  Short code associated with the subscription
+</ParamField>
+
+<ParamField body="keyword" type="string" required>
+  Keyword for the subscription (e.g., "NEWS", "ALERTS")
+</ParamField>
+
+<ParamField body="updateType" type="string" required>
+  Type of update: "addition" (subscribed) or "deletion" (unsubscribed)
+</ParamField>
+
+### Response
+
+Returns "OK" with status 200.
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/sms/subscription \
+  -d "phoneNumber=+254711000111" \
+  -d "shortCode=12345" \
+  -d "keyword=NEWS" \
+  -d "updateType=addition"
+```
+
+### Example Response
+
+```
+OK
+```

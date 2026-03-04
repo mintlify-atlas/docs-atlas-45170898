@@ -1,0 +1,609 @@
+---
+title: Webhook Callbacks
+description: Understanding how Africa's Talking sends notifications and how to handle webhook callbacks
+icon: webhook
+---
+
+## Overview
+
+Webhooks are HTTP callbacks that Africa's Talking sends to your application to notify you about events like SMS delivery, call status, or subscription changes. Your application must expose public endpoints to receive these notifications.
+
+## How Webhooks Work
+
+<Steps>
+  <Step title="Event Occurs">
+    An event happens in Africa's Talking (e.g., SMS delivered, call ended, user subscribes).
+  </Step>
+  
+  <Step title="Africa's Talking Sends HTTP POST">
+    AT sends an HTTP POST request to your configured webhook URL with event data.
+  </Step>
+  
+  <Step title="Your Application Processes">
+    Your Flask route handler receives and processes the webhook payload.
+  </Step>
+  
+  <Step title="Acknowledge Receipt">
+    Your application must respond with a 200 OK status to confirm receipt.
+  </Step>
+</Steps>
+
+<Warning>
+**Always respond with 200 OK quickly**. If your endpoint doesn't respond or returns an error, Africa's Talking may retry the webhook or mark your endpoint as failing.
+</Warning>
+
+## Webhook Types
+
+The application handles various webhook types for different Africa's Talking services:
+
+### SMS Webhooks
+
+#### 1. Two-Way SMS Callback
+
+Receives incoming SMS messages sent to your shortcode or number.
+
+```python routes/sms.py
+@sms_bp.route("/twoway", methods=["POST"])
+def twoway_callback():
+    """
+    Handle two-way SMS callbacks from Africa's Talking.
+    """
+    linkId = request.values.get("linkId")
+    text = request.values.get("text")
+    to = request.values.get("to")
+    msg_id = request.values.get("id")
+    date = request.values.get("date")
+    sender = request.values.get("from")
+
+    if not linkId or not text or not to or not msg_id or not date or not sender:
+        return "BAD", 400
+    print(f"Received 2-way SMS from {sender}: {text}")
+
+    # Respond with a new SMS back to the sender
+    send_twoway_sms(
+        message=f'This is a response to: "{text}"',
+        recipient=sender,
+    )
+
+    return "GOOD", 200
+```
+
+**Payload Example:**
+```json
+{
+  "linkId": "SampleLinkId123",
+  "text": "Hello, I need help",
+  "to": "12345",
+  "id": "ATSMSid_12345",
+  "date": "2026-03-04 10:30:00",
+  "from": "+254711000111"
+}
+```
+
+<Info>
+**Response Format**: Two-way SMS callbacks expect a simple text response of `"GOOD"` or `"BAD"`, not JSON.
+</Info>
+
+#### 2. SMS Delivery Reports
+
+Notifies you when an SMS is delivered, failed, or pending.
+
+```python routes/sms.py
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    """
+    Handle SMS delivery reports.
+    Expected form-data payload:
+    {
+      "id": "...",
+      "status": "...",
+      "phoneNumber": "...",
+      "networkCode": "...",
+      "failureReason": "...",
+      "retryCount": "..."
+    }
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📩 SMS Delivery Report Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    return Response("OK", status=200)
+```
+
+**Payload Example:**
+```json
+{
+  "id": "ATXid_12345",
+  "status": "Success",
+  "phoneNumber": "+254711000111",
+  "networkCode": "63902",
+  "failureReason": "",
+  "retryCount": "0"
+}
+```
+
+**Status Values:**
+- `Success` - Message delivered successfully
+- `Failed` - Delivery failed (check `failureReason`)
+- `Sent` - Message sent but delivery not confirmed
+- `Queued` - Message queued for delivery
+- `Rejected` - Message rejected by network
+
+#### 3. SMS Opt-Out Notifications
+
+Receives notifications when users opt out of bulk SMS.
+
+```python routes/sms.py
+@sms_bp.route("/opt-out", methods=["POST"])
+def sms_opt_out():
+    """
+    Handle Bulk SMS Opt-Out notifications.
+    Expected form-data payload:
+    {
+      "senderId": "MyBrand",
+      "phoneNumber": "+254711XXXYYY"
+    }
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("🚫 SMS Opt-Out Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    return Response("OK", status=200)
+```
+
+**Payload Example:**
+```json
+{
+  "senderId": "MyBrand",
+  "phoneNumber": "+254711000111"
+}
+```
+
+<Warning>
+You **must** honor opt-out requests. Remove opted-out numbers from your marketing lists to comply with regulations.
+</Warning>
+
+#### 4. Premium SMS Subscription Notifications
+
+Receives subscription updates for premium SMS services.
+
+```python routes/sms.py
+@sms_bp.route("/subscription", methods=["POST"])
+def sms_subscription():
+    """
+    Handle Premium SMS subscription notifications.
+    Expected form-data payload:
+    {
+      "phoneNumber": "+254711000111",
+      "shortCode": "12345",
+      "keyword": "NEWS",
+      "updateType": "addition" // or "deletion"
+    }
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("⭐ SMS Subscription Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    phone_number = payload.get("phoneNumber")
+    keyword = payload.get("keyword")
+    update_type = payload.get("updateType")
+
+    print(f"➡️ Subscription update for {phone_number}: {update_type.upper()} to '{keyword}'")
+
+    return Response("OK", status=200)
+```
+
+**Payload Example:**
+```json
+{
+  "phoneNumber": "+254711000111",
+  "shortCode": "12345",
+  "keyword": "NEWS",
+  "updateType": "addition"
+}
+```
+
+### USSD Webhooks
+
+#### USSD Session Handler
+
+Handles interactive USSD sessions. This is **not** a webhook but an interactive endpoint.
+
+```python routes/ussd.py
+@ussd_bp.route("/session", methods=["POST"])
+def ussd_handler():
+    # Read the variables sent via POST from our API
+    session_id = request.values.get("sessionId", None)
+    serviceCode = request.values.get("serviceCode", None)
+    phone_number = request.values.get("phoneNumber", None)
+    text = request.values.get("text", "")
+
+    if text == "":
+        # First request. Start response with CON
+        response = "CON What would you want to check \n"
+        response += "1. My Account \n"
+        response += "2. My phone number"
+
+    elif text == "1":
+        response = "CON Choose account information you want to view \n"
+        response += "1. Account number"
+
+    elif text == "2":
+        # Terminal request
+        response = "END Your phone number is " + str(phone_number)
+
+    elif text == "1*1":
+        accountNumber = "ACC1001"
+        response = "END Your account number is " + accountNumber
+
+    else:
+        response = "END Invalid choice"
+
+    return response
+```
+
+**Request Payload:**
+```json
+{
+  "sessionId": "ATUid_12345",
+  "serviceCode": "*123#",
+  "phoneNumber": "+254711000111",
+  "text": "1*1"
+}
+```
+
+<Note>
+**USSD Response Prefixes:**
+- `CON` - Continue the session (show menu and wait for input)
+- `END` - End the session (show final message)
+</Note>
+
+#### USSD Status Notifications
+
+Receives end-of-session statistics and status.
+
+```python routes/ussd.py
+@ussd_bp.route("/status", methods=["POST"])
+def ussd_status():
+    """
+    Handle USSD end-of-session notifications.
+    Expected payload (form-data):
+    {
+      "date": "2025-09-29 12:00:00",
+      "sessionId": "...",
+      "serviceCode": "*123#",
+      "networkCode": "63902",
+      "phoneNumber": "+254711000111",
+      "status": "Success",
+      "cost": "KES 0.10",
+      "durationInMillis": "12345",
+      "hopsCount": "3",
+      "input": "1*1",
+      "lastAppResponse": "END Your account number is ACC1001",
+      "errorMessage": "..." (optional)
+    }
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📲 USSD Status Notification Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    return Response("OK", status=200)
+```
+
+### Voice Webhooks
+
+#### Voice Call Instructions
+
+Called when a call is answered to get instructions (not a webhook, but a callback).
+
+```python routes/voice.py
+@voice_bp.route("/instruct", methods=["POST"])
+def voice_instruct():
+    """
+    Handle Africa's Talking Voice API call instructions.
+    This endpoint is called when a call is answered to get the next set of instructions.
+    """
+    session_id = request.values.get("sessionId")
+    caller_number = request.values.get("callerNumber")
+    destination_number = request.values.get("destinationNumber")
+
+    print(f"📞 Call answered. Session: {session_id}, Caller: {caller_number}")
+
+    # Return XML instructions
+    response = '<?xml version="1.0" encoding="UTF-8"?>'
+    response += "<Response>"
+    response += "<Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>"
+    response += "</Response>"
+
+    return Response(response, mimetype="text/plain")
+```
+
+**Request Payload:**
+```json
+{
+  "sessionId": "ATVCid_12345",
+  "callerNumber": "+254711000111",
+  "destinationNumber": "+254711000222",
+  "isActive": "1"
+}
+```
+
+<Info>
+**Voice responses use XML format** with tags like `<Say>`, `<Play>`, `<GetDigits>`, `<Dial>`, etc.
+</Info>
+
+#### Voice Events Webhook
+
+Receives call status events (started, answered, ended, failed).
+
+```python routes/voice.py
+@voice_bp.route("/events", methods=["POST"])
+def voice_events():
+    """
+    Handle Africa's Talking Voice API call events.
+    This endpoint receives events like call started, ended, failed, etc.
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    print("📢 Voice Event Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    session_id = payload.get("sessionId")
+    event_type = payload.get("eventType")
+    hangup_cause = payload.get("hangupCause")
+
+    print(f"➡️ Session {session_id} | EventType={event_type} | HangupCause={hangup_cause}")
+
+    return Response("OK", status=200)
+```
+
+**Payload Example:**
+```json
+{
+  "sessionId": "ATVCid_12345",
+  "eventType": "SessionEnded",
+  "callerNumber": "+254711000111",
+  "destinationNumber": "+254711000222",
+  "hangupCause": "NORMAL_CLEARING",
+  "durationInSeconds": "45",
+  "currencyCode": "KES",
+  "amount": "1.50"
+}
+```
+
+**Event Types:**
+- `SessionInitiated` - Call started
+- `SessionAnswered` - Call answered
+- `SessionEnded` - Call ended
+- `CallTransferCompleted` - Transfer completed
+
+### Airtime Webhooks
+
+#### Airtime Validation
+
+Validates an airtime transaction before processing.
+
+```python routes/airtime.py
+@airtime_bp.route("/validation", methods=["POST"])
+def airtime_validation():
+    """
+    Validate an airtime transaction request.
+    Expected payload:
+    {
+        "transactionId": "SomeTransactionID",
+        "phoneNumber": "+254711XXXYYY",
+        "sourceIpAddress": "127.12.32.24",
+        "currencyCode": "KES",
+        "amount": 500.00
+    }
+    """
+    data = request.get_json(force=True)
+
+    transaction_id = data.get("transactionId")
+    phone_number = data.get("phoneNumber")
+    amount = data.get("amount")
+
+    # Perform validation logic
+    if transaction_id and phone_number and amount:
+        status = "Validated"
+    else:
+        status = "Failed"
+
+    return jsonify({"status": status})
+```
+
+#### Airtime Status Webhook
+
+Receives airtime delivery status updates.
+
+```python routes/airtime.py
+@airtime_bp.route("/status", methods=["POST"])
+def airtime_status():
+    """
+    Handle airtime delivery status callbacks.
+    Expected payload:
+    {
+       "phoneNumber":"+254711XXXYYY",
+       "description":"Airtime Delivered Successfully",
+       "status":"Success",
+       "requestId":"ATQid_SampleTxnId123",
+       "discount":"KES 0.6000",
+       "value":"KES 100.0000"
+    }
+    """
+    data = request.get_json(force=True)
+
+    phone_number = data.get("phoneNumber")
+    status = data.get("status")
+    description = data.get("description")
+
+    print(f"📲 Airtime status update for {phone_number}: {status} ({description})")
+
+    return "OK", 200
+```
+
+### SIM Swap Webhooks
+
+```python routes/sim-swap.py
+@simswap_bp.route("/status", methods=["POST"])
+def simswap_status():
+    """
+    Handle SIM swap status callbacks.
+    Expected payload:
+    {
+      "status": "Swapped",
+      "lastSimSwapDate": "01-01-1900",
+      "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+      "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+      "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+    }
+    """
+    data = request.get_json(force=True)
+
+    status = data.get("status")
+    last_sim_swap_date = data.get("lastSimSwapDate")
+    request_id = data.get("requestId")
+
+    print(f"📲 SIM swap status: {status}, last swap: {last_sim_swap_date}")
+
+    return "OK", 200
+```
+
+## Webhook Handling Patterns
+
+### Pattern 1: Extract and Log
+
+Most webhooks follow this simple pattern:
+
+```python
+@bp.route("/webhook", methods=["POST"])
+def webhook_handler():
+    # Extract all form data
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+    
+    # Log the data
+    print("📩 Webhook Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+    
+    # Process if needed
+    # ... your business logic ...
+    
+    # Always acknowledge
+    return Response("OK", status=200)
+```
+
+### Pattern 2: Validation and Response
+
+For webhooks that require validation:
+
+```python
+@bp.route("/webhook", methods=["POST"])
+def webhook_handler():
+    # Extract required fields
+    field1 = request.values.get("field1")
+    field2 = request.values.get("field2")
+    
+    # Validate
+    if not field1 or not field2:
+        return "BAD", 400
+    
+    # Process
+    process_webhook(field1, field2)
+    
+    # Acknowledge
+    return "GOOD", 200
+```
+
+### Pattern 3: Interactive Response (USSD/Voice)
+
+For endpoints that need to return dynamic content:
+
+```python
+@bp.route("/interactive", methods=["POST"])
+def interactive_handler():
+    user_input = request.values.get("text", "")
+    
+    # Generate dynamic response based on input
+    if user_input == "":
+        response = "CON Welcome! Select an option:\n1. Option A\n2. Option B"
+    elif user_input == "1":
+        response = "END You selected Option A"
+    else:
+        response = "END Invalid selection"
+    
+    return response
+```
+
+## Testing Webhooks Locally
+
+<Accordion title="Using ngrok for local testing">
+  1. **Install ngrok**: Download from [ngrok.com](https://ngrok.com)
+  
+  2. **Start your Flask app**:
+     ```bash
+     python app.py
+     ```
+  
+  3. **Create a tunnel**:
+     ```bash
+     ngrok http 9000
+     ```
+  
+  4. **Copy the HTTPS URL**: e.g., `https://abc123.ngrok.io`
+  
+  5. **Configure webhook in Africa's Talking**:
+     - SMS Callback: `https://abc123.ngrok.io/api/sms/twoway`
+     - Delivery Reports: `https://abc123.ngrok.io/api/sms/delivery-reports`
+     - Voice Events: `https://abc123.ngrok.io/api/voice/events`
+  
+  6. **Test and monitor**: Watch your Flask console for incoming webhooks
+</Accordion>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Respond Quickly" icon="bolt">
+    Always return a 200 OK response immediately. Process time-consuming tasks asynchronously.
+  </Card>
+  
+  <Card title="Validate Signatures" icon="shield-check">
+    In production, verify webhook signatures to ensure requests come from Africa's Talking.
+  </Card>
+  
+  <Card title="Handle Retries" icon="rotate">
+    Implement idempotency - Africa's Talking may send the same webhook multiple times.
+  </Card>
+  
+  <Card title="Log Everything" icon="file-lines">
+    Log all webhook payloads for debugging and auditing purposes.
+  </Card>
+</CardGroup>
+
+<Warning>
+**Production Security**: In production, always:
+- Use HTTPS endpoints
+- Validate request signatures
+- Implement rate limiting
+- Store webhook payloads for audit trails
+</Warning>
+
+## Summary
+
+Webhooks are essential for building responsive applications with Africa's Talking. Key takeaways:
+
+- **Always respond with 200 OK** to acknowledge receipt
+- **Different services have different payload formats** (form-data vs JSON)
+- **Some endpoints are interactive** (USSD, Voice) and require dynamic responses
+- **Log all payloads** for debugging and compliance
+- **Process asynchronously** for time-consuming operations
+- **Test locally with ngrok** before deploying to production

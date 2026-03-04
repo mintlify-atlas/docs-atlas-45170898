@@ -1,0 +1,451 @@
+---
+title: SMS Utilities
+description: Africa's Talking SMS integration utilities for sending messages
+icon: message
+---
+
+## Overview
+
+The SMS utilities module provides functions to send SMS messages using Africa's Talking API. It supports both two-way SMS (with shortcode) and bulk SMS sending.
+
+### Environment Variables
+
+<ParamField path="AT_USERNAME" type="string" required>
+  Your Africa's Talking username (e.g., `sandbox` or your production username)
+</ParamField>
+
+<ParamField path="AT_API_KEY" type="string" required>
+  Your Africa's Talking API key
+</ParamField>
+
+<ParamField path="AT_SHORTCODE" type="string">
+  Your shortcode for two-way SMS (optional, only needed for 2-way messaging)
+</ParamField>
+
+---
+
+## send_twoway_sms
+
+Send a two-way SMS using a shortcode. Two-way SMS allows recipients to reply, and those replies are sent to your callback URL.
+
+```python
+def send_twoway_sms(
+    message: str, 
+    recipient: str, 
+    shortcode: Optional[str] = AT_SHORTCODE
+) -> Dict[str, Any]
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The SMS message to send. Cannot be empty.
+</ParamField>
+
+<ParamField path="recipient" type="string" required>
+  The recipient's phone number in international format (e.g., `+254712345678`)
+</ParamField>
+
+<ParamField path="shortcode" type="string" optional>
+  The shortcode to use for sending. Defaults to `AT_SHORTCODE` from environment variables.
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="Dict[str, Any]">
+  Africa's Talking API response containing message status and details
+  
+  ```python
+  {
+      "SMSMessageData": {
+          "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+          "Recipients": [{
+              "statusCode": 101,
+              "number": "+254712345678",
+              "status": "Success",
+              "cost": "KES 0.8000",
+              "messageId": "ATXid_..."
+          }]
+      }
+  }
+  ```
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.sms_utils import send_twoway_sms
+
+# Send a two-way SMS
+response = send_twoway_sms(
+    message="Hello! Reply to this message.",
+    recipient="+254712345678"
+)
+
+print(f"Message sent: {response}")
+# ✅ SMS sent to +254712345678: Hello! Reply to this message.
+
+# Use custom shortcode
+response = send_twoway_sms(
+    message="Custom shortcode message",
+    recipient="+254712345678",
+    shortcode="12345"
+)
+```
+
+### Error Handling
+
+```python
+try:
+    response = send_twoway_sms("Test message", "+254712345678")
+except ValueError as e:
+    print(f"Validation error: {e}")
+    # Possible errors:
+    # - Invalid recipient format: must start with '+'
+    # - Message cannot be empty
+except Exception as e:
+    print(f"SMS sending failed: {e}")
+    # Network errors, API errors, etc.
+```
+
+### Route Handler Integration
+
+Example from `routes/sms.py:34-52`:
+
+```python
+@sms_bp.route("/invoke-twoway-sms", methods=["GET"])
+def invoke_twoway_sms():
+    phone = "+" + request.args.get("phone", "").strip()
+    message = request.args.get("message", "Hello from Africa's Talking!").strip()
+
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = send_twoway_sms(message, phone)
+        return {"message": f"SMS sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+### Two-Way SMS Callback
+
+Handle replies from recipients (from `routes/sms.py:55-77`):
+
+```python
+@sms_bp.route("/twoway", methods=["POST"])
+def twoway_callback():
+    linkId = request.values.get("linkId")
+    text = request.values.get("text")
+    sender = request.values.get("from")
+    
+    print(f"Received 2-way SMS from {sender}: {text}")
+    
+    # Respond to the sender
+    send_twoway_sms(
+        message=f'This is a response to: "{text}"',
+        recipient=sender
+    )
+    
+    return "GOOD", 200
+```
+
+---
+
+## send_bulk_sms
+
+Send an SMS to multiple recipients simultaneously. Useful for notifications, marketing, or alerts.
+
+```python
+def send_bulk_sms(message: str, recipients: List[str]) -> Dict[str, Any]
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The SMS message to send to all recipients
+</ParamField>
+
+<ParamField path="recipients" type="List[string]" required>
+  List of phone numbers in international format (e.g., `["+254712345678", "+254723456789"]`)
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="Dict[str, Any]">
+  Africa's Talking API response containing delivery status for each recipient
+  
+  ```python
+  {
+      "SMSMessageData": {
+          "Message": "Sent to 2/2 Total Cost: KES 1.6000",
+          "Recipients": [
+              {
+                  "statusCode": 101,
+                  "number": "+254712345678",
+                  "status": "Success",
+                  "cost": "KES 0.8000",
+                  "messageId": "ATXid_..."
+              },
+              {
+                  "statusCode": 101,
+                  "number": "+254723456789",
+                  "status": "Success",
+                  "cost": "KES 0.8000",
+                  "messageId": "ATXid_..."
+              }
+          ]
+      }
+  }
+  ```
+</ResponseField>
+
+### Usage Example
+
+```python
+from utils.sms_utils import send_bulk_sms
+
+# Send to multiple recipients
+recipients = [
+    "+254712345678",
+    "+254723456789",
+    "+254734567890"
+]
+
+response = send_bulk_sms(
+    message="Important announcement: System maintenance at 2 AM.",
+    recipients=recipients
+)
+
+print(response)
+# 📩 Bulk SMS sent to 3 recipients
+
+# Check individual delivery status
+for recipient in response["SMSMessageData"]["Recipients"]:
+    print(f"{recipient['number']}: {recipient['status']}")
+```
+
+### Route Handler Integration
+
+Example from `routes/sms.py:13-31`:
+
+```python
+@sms_bp.route("/invoke-bulk-sms", methods=["GET"])
+def invoke_bulk_sms():
+    phone = "+" + request.args.get("phone", "").strip()
+    message = request.args.get("message", "Hello from Africa's Talking!").strip()
+
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        # Send to single recipient using bulk SMS
+        response = send_bulk_sms(message, [phone])
+        return {"message": f"SMS sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+### Error Handling
+
+```python
+try:
+    response = send_bulk_sms("Notification", recipients)
+except ValueError as e:
+    print(f"Validation error: {e}")
+    # Error: Recipients list cannot be empty
+except Exception as e:
+    print(f"Bulk SMS failed: {e}")
+    # Network errors, API errors, invalid API keys, etc.
+```
+
+---
+
+## Phone Number Format Validation
+
+Both functions validate phone numbers to ensure they're in international format:
+
+### Valid Formats
+
+```python
+# ✅ Valid formats
+"+254712345678"  # Kenya
+"+234803456789"  # Nigeria
+"+233240123456"  # Ghana
+"+256701234567"  # Uganda
+```
+
+### Invalid Formats
+
+```python
+# ❌ Invalid formats (will raise ValueError)
+"0712345678"     # Missing country code
+"254712345678"   # Missing '+' prefix
+"712345678"      # Missing country code and '+'
+""
+```
+
+### Validation Example
+
+```python
+def validate_and_send(message: str, phone: str):
+    # Ensure phone starts with '+'
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    
+    try:
+        return send_twoway_sms(message, phone)
+    except ValueError as e:
+        print(f"Invalid phone format: {e}")
+        return None
+```
+
+---
+
+## Delivery Reports
+
+Monitor SMS delivery status through webhooks (from `routes/sms.py:80-100`):
+
+```python
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    """
+    Handle SMS delivery reports from Africa's Talking.
+    
+    Payload example:
+    {
+        "id": "ATXid_...",
+        "status": "Success",
+        "phoneNumber": "+254712345678",
+        "networkCode": "63902",
+        "failureReason": "",
+        "retryCount": "0"
+    }
+    """
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+    
+    print("📩 SMS Delivery Report Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+    
+    # Process delivery status
+    if payload.get("status") != "Success":
+        print(f"⚠️ Delivery failed: {payload.get('failureReason')}")
+    
+    return "OK", 200
+```
+
+---
+
+## Status Codes
+
+Common Africa's Talking SMS status codes:
+
+| Code | Status | Description |
+|------|--------|-------------|
+| 101 | Success | Message sent successfully |
+| 102 | Queued | Message queued for delivery |
+| 401 | RiskHold | Message flagged for review |
+| 402 | InvalidSenderId | Invalid sender ID |
+| 403 | InvalidPhoneNumber | Invalid recipient number |
+| 404 | UnsupportedNumberType | Number type not supported |
+| 405 | InsufficientBalance | Insufficient account balance |
+| 406 | UserInBlackList | Recipient opted out |
+| 407 | CouldNotRoute | Unable to route message |
+| 500 | InternalServerError | Africa's Talking server error |
+
+### Handling Status Codes
+
+```python
+response = send_bulk_sms("Test", ["+254712345678"])
+
+for recipient in response["SMSMessageData"]["Recipients"]:
+    status_code = recipient["statusCode"]
+    
+    if status_code == 101:
+        print(f"✅ Success: {recipient['number']}")
+    elif status_code == 102:
+        print(f"⏳ Queued: {recipient['number']}")
+    elif status_code == 405:
+        print(f"❌ Insufficient balance")
+    else:
+        print(f"⚠️ Error {status_code}: {recipient['status']}")
+```
+
+---
+
+## Best Practices
+
+### 1. Use Bulk SMS for Multiple Recipients
+
+```python
+# ❌ Don't do this
+for phone in phones:
+    send_twoway_sms(message, phone)  # Multiple API calls
+
+# ✅ Do this instead
+send_bulk_sms(message, phones)  # Single API call
+```
+
+### 2. Implement Error Retry Logic
+
+```python
+import time
+
+def send_sms_with_retry(message: str, recipients: list, retries: int = 3):
+    for attempt in range(retries):
+        try:
+            return send_bulk_sms(message, recipients)
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            raise
+```
+
+### 3. Validate Input Before Sending
+
+```python
+def safe_send_sms(message: str, recipients: list):
+    # Validate message
+    if not message or not message.strip():
+        raise ValueError("Message cannot be empty")
+    
+    # Validate and format phone numbers
+    valid_recipients = []
+    for phone in recipients:
+        if not phone.startswith("+"):
+            phone = "+" + phone
+        if len(phone) >= 10:  # Minimum valid length
+            valid_recipients.append(phone)
+    
+    if not valid_recipients:
+        raise ValueError("No valid recipients")
+    
+    return send_bulk_sms(message, valid_recipients)
+```
+
+### 4. Monitor Delivery Reports
+
+Always implement delivery report webhooks to track message status:
+
+```python
+# Set webhook URL in Africa's Talking dashboard:
+# https://your-domain.com/sms/delivery-reports
+```
+
+### 5. Handle Opt-Outs
+
+Implement opt-out handling (from `routes/sms.py:103-119`):
+
+```python
+@sms_bp.route("/opt-out", methods=["POST"])
+def sms_opt_out():
+    sender_id = request.values.get("senderId")
+    phone_number = request.values.get("phoneNumber")
+    
+    # Add to opt-out list in your database
+    print(f"🚫 User {phone_number} opted out from {sender_id}")
+    
+    return "OK", 200
+```

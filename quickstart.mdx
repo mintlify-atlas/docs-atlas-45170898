@@ -1,80 +1,341 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Send your first SMS and make your first voice call in under 5 minutes'
+icon: 'rocket'
 ---
 
-## Get started in three steps
+Get started with Africa's Talking AI integration by sending an SMS and making a voice call. This guide assumes you've already completed the [setup](/setup).
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- Completed the [environment setup](/setup)
+- Flask server running on `http://localhost:9000`
+- Valid Africa's Talking credentials in your `.env` file
+- A phone number to test with (in international format: `+254XXXXXXXXX`)
 
-### Step 2: Deploy your changes
+## Send Your First SMS
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+The SMS API allows you to send bulk SMS messages to one or more recipients using a simple GET request.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Steps>
+  <Step title="Start your Flask server">
+    Make sure your Flask application is running:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    make dev
+    ```
 
-### Step 3: Go live
+    You should see output confirming the server is running:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```
+    ✅ Registered sms at /api/sms
+    ✅ Registered voice at /api/voice
+    * Running on http://127.0.0.1:9000
+    ```
+  </Step>
 
-## Next steps
+  <Step title="Send an SMS via the API">
+    Use curl or your browser to send an SMS. Replace `YOUR_PHONE_NUMBER` with your actual phone number:
 
-Now that you have your docs running, explore these key features:
+    <CodeGroup>
+      ```bash curl
+      curl "http://localhost:9000/api/sms/invoke-bulk-sms?phone=254712345678&message=Hello%20from%20Africa%27s%20Talking!"
+      ```
 
-<CardGroup cols={2}>
+      ```bash Browser
+      # Open in your browser:
+      http://localhost:9000/api/sms/invoke-bulk-sms?phone=254712345678&message=Hello%20World
+      ```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
+      ```python Python
+      import requests
+
+      response = requests.get(
+          "http://localhost:9000/api/sms/invoke-bulk-sms",
+          params={
+              "phone": "254712345678",
+              "message": "Hello from Africa's Talking!"
+          }
+      )
+
+      print(response.json())
+      ```
+    </CodeGroup>
+
+    <Note>
+      The `phone` parameter should be in international format **without** the `+` symbol (e.g., `254712345678` for Kenya).
+    </Note>
+  </Step>
+
+  <Step title="Check the response">
+    You should receive a JSON response confirming the SMS was sent:
+
+    ```json
+    {
+      "message": "SMS sent to +254712345678",
+      "response": {
+        "SMSMessageData": {
+          "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+          "Recipients": [
+            {
+              "statusCode": 101,
+              "number": "+254712345678",
+              "status": "Success",
+              "cost": "KES 0.8000",
+              "messageId": "ATXid_abc123def456ghi789"
+            }
+          ]
+        }
+      }
+    }
+    ```
+
+    <Tip>
+      A status code of `101` means the message was sent successfully. Check your phone for the SMS!
+    </Tip>
+  </Step>
+</Steps>
+
+### How it Works
+
+The SMS endpoint is defined in `routes/sms.py:13-31`:
+
+```python
+@sms_bp.route("/invoke-bulk-sms", methods=["GET"])
+def invoke_bulk_sms():
+    phone = "+" + request.args.get("phone", "").strip()
+    message = request.args.get("message", "Hello from Africa's Talking!").strip()
+
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = send_bulk_sms(message, [phone])
+        return {"message": f"SMS sent to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+The `send_bulk_sms()` function from `utils/sms_utils.py:55-75` handles the actual API call:
+
+```python
+def send_bulk_sms(message: str, recipients: List[str]) -> Dict[str, Any]:
+    if not recipients:
+        raise ValueError("Recipients list cannot be empty")
+
+    try:
+        response = _sms.send(message, recipients)
+        print(f"📩 Bulk SMS sent to {len(recipients)} recipients")
+        return response
+    except Exception as e:
+        print(f"❌ Bulk SMS failed: {e}")
+        raise
+```
+
+---
+
+## Make Your First Voice Call
+
+The Voice API allows you to initiate outbound calls programmatically.
+
+<Steps>
+  <Step title="Ensure your voice number is configured">
+    Verify that `AT_VOICE_NUMBER` is set in your `.env` file:
+
+    ```bash
+    AT_VOICE_NUMBER=+254XXXXXXXXX
+    ```
+
+    <Warning>
+      Voice calls require a **production** Africa's Talking account with a voice-enabled number. The sandbox does not support voice calls.
+    </Warning>
+  </Step>
+
+  <Step title="Initiate a voice call">
+    Use curl or your browser to make a call. Replace `YOUR_PHONE_NUMBER` with the recipient's number:
+
+    <CodeGroup>
+      ```bash curl
+      curl "http://localhost:9000/api/voice/invoke-call?phone=254712345678"
+      ```
+
+      ```bash Browser
+      # Open in your browser:
+      http://localhost:9000/api/voice/invoke-call?phone=254712345678
+      ```
+
+      ```python Python
+      import requests
+
+      response = requests.get(
+          "http://localhost:9000/api/voice/invoke-call",
+          params={"phone": "254712345678"}
+      )
+
+      print(response.json())
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Check the response">
+    You should receive a confirmation that the call was initiated:
+
+    ```json
+    {
+      "message": "Call initiated to +254712345678",
+      "response": {
+        "entries": [
+          {
+            "status": "Queued",
+            "phoneNumber": "+254712345678"
+          }
+        ],
+        "errorMessage": "None"
+      }
+    }
+    ```
+
+    The recipient should receive a call shortly. When they answer, they'll hear the message configured in your `/api/voice/instruct` webhook.
+  </Step>
+
+  <Step title="Answer the call">
+    When the call is answered, Africa's Talking will POST to your `/api/voice/instruct` endpoint to get instructions. The default implementation plays a greeting:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+      <Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>
+    </Response>
+    ```
+
+    <Tip>
+      You can customize the voice instructions in `routes/voice.py:32-56` to create interactive voice menus, collect DTMF input, or play audio files.
+    </Tip>
+  </Step>
+</Steps>
+
+### How it Works
+
+The voice call endpoint is defined in `routes/voice.py:12-29`:
+
+```python
+@voice_bp.route("/invoke-call", methods=["GET"])
+def make_voice_call():
+    phone = "+" + request.args.get("phone", "").strip()
+
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = make_call(phone)
+        return {"message": f"Call initiated to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+The `make_call()` function from `utils/voice_utils.py:20-45` handles the API call:
+
+```python
+def make_call(
+    phone_number: str, from_number: Optional[str] = AT_VOICE_NUMBER
+) -> Dict[str, Any]:
+    if not phone_number.startswith("+"):
+        raise ValueError(
+            f"Invalid phone number format: {phone_number}. Must be in +2547... format"
+        )
+
+    try:
+        response = _voice.call(callTo=[phone_number], callFrom=from_number)
+        print(f"📞 Call initiated to {phone_number}")
+        return response
+    except Exception as e:
+        print(f"❌ Call failed to {phone_number}: {e}")
+        raise
+```
+
+---
+
+## Understanding Webhooks
+
+Both SMS and Voice APIs use webhooks to send you real-time notifications about events:
+
+<Card title="SMS Webhooks" icon="message">
+  - **Delivery Reports** (`POST /api/sms/delivery-reports`) - Notifies you when an SMS is delivered or fails
+  - **Two-Way SMS** (`POST /api/sms/twoway`) - Receives incoming SMS messages sent to your shortcode
 </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
+<Card title="Voice Webhooks" icon="phone">
+  - **Call Instructions** (`POST /api/voice/instruct`) - Provides XML instructions when a call is answered
+  - **Call Events** (`POST /api/voice/events`) - Receives events like call started, ended, failed, etc.
 </Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  To receive webhooks locally, you need to expose your Flask server to the internet using a tunneling tool like ngrok. See the [Setup Guide](/setup#expose-your-server) for details.
 </Note>
+
+---
+
+## Next Steps
+
+Now that you've sent your first SMS and made your first call, you can:
+
+<CardGroup cols={2}>
+  <Card title="Explore SMS Features" icon="envelope" href="/services/sms">
+    Learn about two-way SMS, delivery reports, and premium SMS subscriptions
+  </Card>
+  <Card title="Build Voice Apps" icon="microphone" href="/services/voice">
+    Create interactive voice menus, record calls, and handle DTMF input
+  </Card>
+  <Card title="Integrate AI" icon="brain" href="/ai/gemini-setup">
+    Use Google Gemini to add AI-powered responses to SMS and voice interactions
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/setup#troubleshooting">
+    Resolve common issues and errors
+  </Card>
+</CardGroup>
+
+---
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Error: Missing 'phone' query parameter">
+    Make sure you're passing the `phone` parameter in the URL:
+
+    ```bash
+    # ✅ Correct
+    curl "http://localhost:9000/api/sms/invoke-bulk-sms?phone=254712345678&message=Hello"
+
+    # ❌ Incorrect (missing phone parameter)
+    curl "http://localhost:9000/api/sms/invoke-bulk-sms?message=Hello"
+    ```
+  </Accordion>
+
+  <Accordion title="Error: Missing Africa's Talking credentials">
+    Ensure your `.env` file contains valid credentials:
+
+    ```bash
+    AT_USERNAME=sandbox  # or your production username
+    AT_API_KEY=your_actual_api_key_here
+    AT_VOICE_NUMBER=+254XXXXXXXXX  # for voice calls only
+    ```
+
+    Restart your Flask server after updating the `.env` file.
+  </Accordion>
+
+  <Accordion title="SMS not received">
+    - Check that the phone number is in the correct format (254XXXXXXXXX without the +)
+    - Verify you have sufficient credits in your Africa's Talking account
+    - Check the API response for error messages
+    - Ensure you're using a valid destination number (some countries/networks may be restricted)
+  </Accordion>
+
+  <Accordion title="Voice call not working">
+    - Voice calls require a **production** account (sandbox doesn't support voice)
+    - Verify `AT_VOICE_NUMBER` is set and is a valid voice-enabled number
+    - Check that you have sufficient credits for voice calls
+    - Ensure your webhook URLs are configured in the Africa's Talking dashboard
+  </Accordion>
+</AccordionGroup>

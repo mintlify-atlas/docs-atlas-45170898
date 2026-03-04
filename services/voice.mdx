@@ -1,0 +1,376 @@
+---
+title: 'Voice Service'
+description: 'Make outbound calls, provide call instructions, and handle voice events'
+---
+
+## Overview
+
+The Voice service enables you to make outbound calls, provide interactive voice instructions using XML, and handle call events through webhooks.
+
+## Service Status
+
+### Check Voice Service Status
+
+<CodeGroup>
+```bash GET /voice/
+curl http://localhost:8000/voice/
+```
+</CodeGroup>
+
+<ResponseField name="service" type="string">
+  Service name ("voice")
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Service status ("ready")
+</ResponseField>
+
+**Response Example**
+```json
+{
+  "service": "voice",
+  "status": "ready"
+}
+```
+
+---
+
+## Making Calls
+
+### Initiate Outbound Call
+
+Make a voice call to a phone number.
+
+<CodeGroup>
+```bash GET /voice/invoke-call
+curl "http://localhost:8000/voice/invoke-call?phone=254711XXXYYY"
+```
+</CodeGroup>
+
+<ParamField query="phone" type="string" required>
+  Phone number to call (without + prefix)
+  
+  Example: `254711XXXYYY`
+</ParamField>
+
+**Implementation**
+```python
+# From routes/voice.py:12-29
+@voice_bp.route("/invoke-call", methods=["GET"])
+def make_voice_call():
+    phone = "+" + request.args.get("phone", "").strip()
+
+    print(f"📞 Request to call: {phone}")
+    if not phone:
+        return {"error": "Missing 'phone' query parameter"}, 400
+
+    try:
+        response = make_call(phone)
+        return {"message": f"Call initiated to {phone}", "response": response}
+    except Exception as e:
+        return {"error": str(e)}, 500
+```
+
+**Response Example**
+```json
+{
+  "message": "Call initiated to +254711XXXYYY",
+  "response": {
+    "sessionId": "ATVId_...",
+    "status": "Queued"
+  }
+}
+```
+
+**Error Response**
+```json
+{
+  "error": "Missing 'phone' query parameter"
+}
+```
+
+---
+
+## Call Instructions
+
+### Provide Voice Instructions
+
+This endpoint is called by Africa's Talking when a call is answered. Return XML instructions to control the call flow.
+
+<CodeGroup>
+```bash POST /voice/instruct
+curl -X POST http://localhost:8000/voice/instruct \
+  -d "sessionId=ATVId_123" \
+  -d "callerNumber=%2B254711000111" \
+  -d "destinationNumber=%2B254711XXXYYY"
+```
+</CodeGroup>
+
+<ParamField body="sessionId" type="string" required>
+  Unique identifier for the call session
+</ParamField>
+
+<ParamField body="callerNumber" type="string" required>
+  Phone number of the person who initiated the call
+</ParamField>
+
+<ParamField body="destinationNumber" type="string" required>
+  Phone number being called
+</ParamField>
+
+**Implementation**
+```python
+# From routes/voice.py:32-56
+@voice_bp.route("/instruct", methods=["POST"])
+def voice_instruct():
+    session_id = request.values.get("sessionId")
+    caller_number = request.values.get("callerNumber")
+    destination_number = request.values.get("destinationNumber")
+
+    print(
+        f"📞 Call answered. Session: {session_id}, Caller: {caller_number}, "
+        f"Destination: {destination_number}"
+    )
+
+    # Example instructions: Greet the caller and end the call
+    response = '<?xml version="1.0" encoding="UTF-8"?>'
+    response += "<Response>"
+    response += (
+        "<Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>"
+    )
+    response += "</Response>"
+
+    return Response(response, mimetype="text/plain")
+```
+
+**Response Example**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>
+</Response>
+```
+
+### XML Instructions Reference
+
+You can use various XML elements to control the call:
+
+<AccordionGroup>
+  <Accordion title="<Say> - Text-to-Speech">
+    Convert text to speech and play it to the caller.
+    
+    ```xml
+    <Say voice="woman" playBeep="true">
+      Welcome to our service. Please hold.
+    </Say>
+    ```
+    
+    **Attributes:**
+    - `voice`: "man" or "woman" (default: "woman")
+    - `playBeep`: Play a beep before speaking (default: false)
+  </Accordion>
+
+  <Accordion title="<Play> - Play Audio">
+    Play an audio file from a URL.
+    
+    ```xml
+    <Play url="https://example.com/audio.mp3" />
+    ```
+  </Accordion>
+
+  <Accordion title="<GetDigits> - Collect Input">
+    Collect DTMF input from the caller.
+    
+    ```xml
+    <GetDigits timeout="30" finishOnKey="#" callbackUrl="https://example.com/callback">
+      <Say>Press 1 for sales, 2 for support</Say>
+    </GetDigits>
+    ```
+    
+    **Attributes:**
+    - `timeout`: Seconds to wait for input
+    - `finishOnKey`: Key that terminates input (e.g., "#")
+    - `callbackUrl`: URL to POST the collected digits
+  </Accordion>
+
+  <Accordion title="<Dial> - Connect Calls">
+    Connect the caller to another phone number.
+    
+    ```xml
+    <Dial phoneNumbers="+254711XXXYYY" record="true" sequential="true" />
+    ```
+    
+    **Attributes:**
+    - `phoneNumbers`: Comma-separated list of numbers to dial
+    - `record`: Record the conversation (default: false)
+    - `sequential`: Try numbers in order vs simultaneously
+  </Accordion>
+
+  <Accordion title="<Record> - Record Audio">
+    Record the caller's voice.
+    
+    ```xml
+    <Record finishOnKey="#" maxLength="60" playBeep="true" 
+            callbackUrl="https://example.com/recording" />
+    ```
+    
+    **Attributes:**
+    - `finishOnKey`: Key to stop recording
+    - `maxLength`: Maximum recording duration in seconds
+    - `playBeep`: Play beep before recording
+    - `callbackUrl`: URL to receive the recording URL
+  </Accordion>
+
+  <Accordion title="<Reject> - Reject Call">
+    Reject an incoming call.
+    
+    ```xml
+    <Reject />
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Call Events
+
+### Handle Voice Events
+
+Receive real-time notifications about call events (started, answered, ended, failed, etc.).
+
+<CodeGroup>
+```bash POST /voice/events
+curl -X POST http://localhost:8000/voice/events \
+  -d "sessionId=ATVId_123" \
+  -d "eventType=SessionEnded" \
+  -d "callerNumber=%2B254711000111" \
+  -d "destinationNumber=%2B254711XXXYYY" \
+  -d "hangupCause=NORMAL_CLEARING" \
+  -d "durationInSeconds=45"
+```
+</CodeGroup>
+
+<ParamField body="sessionId" type="string" required>
+  Unique call session identifier
+</ParamField>
+
+<ParamField body="eventType" type="string" required>
+  Type of event (e.g., "SessionInitiated", "SessionAnswered", "SessionEnded")
+</ParamField>
+
+<ParamField body="callerNumber" type="string">
+  Caller's phone number
+</ParamField>
+
+<ParamField body="destinationNumber" type="string">
+  Destination phone number
+</ParamField>
+
+<ParamField body="hangupCause" type="string">
+  Reason for call termination (e.g., "NORMAL_CLEARING", "USER_BUSY", "NO_ANSWER")
+</ParamField>
+
+<ParamField body="durationInSeconds" type="string">
+  Call duration in seconds
+</ParamField>
+
+<ParamField body="amount" type="string">
+  Cost of the call
+</ParamField>
+
+<ParamField body="currencyCode" type="string">
+  Currency code (e.g., "KES")
+</ParamField>
+
+**Implementation**
+```python
+# From routes/voice.py:59-87
+@voice_bp.route("/events", methods=["POST"])
+def voice_events():
+    # Collect all request parameters
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+
+    # Log the event
+    print("📢 Voice Event Received:")
+    for key, value in payload.items():
+        print(f"   {key}: {value}")
+
+    # Extract key fields
+    session_id = payload.get("sessionId")
+    event_type = payload.get("eventType")
+    caller = payload.get("callerNumber")
+    dest = payload.get("destinationNumber")
+    hangup_cause = payload.get("hangupCause")
+
+    print(
+        f"➡️ Session {session_id} | EventType={event_type} | Caller={caller} | "
+        f"Dest={dest} | HangupCause={hangup_cause}"
+    )
+
+    # Always respond with "OK" (200) so AT knows we received it
+    return Response("OK", status=200)
+```
+
+**Event Types**
+
+<CardGroup cols={2}>
+  <Card title="SessionInitiated" icon="play">
+    Call has been initiated
+  </Card>
+  <Card title="SessionAnswered" icon="phone-volume">
+    Call has been answered
+  </Card>
+  <Card title="SessionEnded" icon="phone-slash">
+    Call has ended
+  </Card>
+  <Card title="SessionFailed" icon="circle-exclamation">
+    Call failed to connect
+  </Card>
+</CardGroup>
+
+**Response**
+- Status: 200 OK
+- Body: `"OK"`
+
+---
+
+## Complete Call Flow Example
+
+<Steps>
+  <Step title="Initiate Call">
+    Make a GET request to `/voice/invoke-call` with the phone number
+  </Step>
+  
+  <Step title="Receive Session ID">
+    Africa's Talking returns a session ID and queues the call
+  </Step>
+  
+  <Step title="Call Answered">
+    When answered, AT calls your `/voice/instruct` endpoint
+  </Step>
+  
+  <Step title="Provide Instructions">
+    Your endpoint returns XML with voice instructions
+  </Step>
+  
+  <Step title="Track Events">
+    AT sends real-time events to your `/voice/events` endpoint
+  </Step>
+  
+  <Step title="Call Ends">
+    Receive `SessionEnded` event with call details and cost
+  </Step>
+</Steps>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SMS Service" icon="message" href="/services/sms">
+    Send SMS messages and handle delivery reports
+  </Card>
+  <Card title="USSD Service" icon="hashtag" href="/services/ussd">
+    Build interactive USSD menus
+  </Card>
+</CardGroup>

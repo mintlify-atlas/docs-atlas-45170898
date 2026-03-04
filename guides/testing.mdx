@@ -1,0 +1,842 @@
+---
+title: Testing Your Endpoints
+description: Comprehensive guide for testing Africa's Talking API endpoints using curl, Postman, and browser, plus debugging tips
+---
+
+## Overview
+
+Testing is crucial to ensure your Africa's Talking integration works correctly. This guide covers testing methods for all API endpoints, webhook validation, and debugging common issues.
+
+## Prerequisites
+
+Before testing, ensure:
+
+- Flask application is running (default port: 9000)
+- Tunneling service is active (ngrok, cloudflared, or localhost.run)
+- Webhooks are configured in Africa's Talking dashboard
+- Environment variables are properly set in `.env`
+
+<Note>
+  Keep your terminal visible while testing to see real-time logs from your Flask application.
+</Note>
+
+---
+
+## Testing with curl
+
+curl is a command-line tool perfect for quick API tests and automation.
+
+### Testing SMS Endpoints
+
+#### Check SMS Service Status
+
+```bash
+curl http://localhost:9000/api/sms/
+```
+
+**Expected Response:**
+```json
+{
+  "service": "sms",
+  "status": "ready"
+}
+```
+
+#### Send Bulk SMS
+
+```bash
+curl "http://localhost:9000/api/sms/invoke-bulk-sms?phone=254711000000&message=Hello%20from%20AT"
+```
+
+**With URL encoding for spaces:**
+```bash
+curl --data-urlencode "message=Hello from Africa's Talking" \
+     "http://localhost:9000/api/sms/invoke-bulk-sms?phone=254711000000"
+```
+
+**Expected Response:**
+```json
+{
+  "message": "SMS sent to +254711000000",
+  "response": {
+    "SMSMessageData": {
+      "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+      "Recipients": [
+        {
+          "statusCode": 101,
+          "number": "+254711000000",
+          "status": "Success",
+          "cost": "KES 0.8000",
+          "messageId": "ATXid_abc123"
+        }
+      ]
+    }
+  }
+}
+```
+
+<Tip>
+  Status code `101` means "Processed" - the message was accepted and queued for delivery.
+</Tip>
+
+#### Send Two-way SMS
+
+```bash
+curl "http://localhost:9000/api/sms/invoke-twoway-sms?phone=254711000000&message=Hello%20World"
+```
+
+#### Simulate SMS Delivery Report Webhook
+
+```bash
+curl -X POST http://localhost:9000/api/sms/delivery-reports \
+  -d "id=ATXid_abc123" \
+  -d "status=Success" \
+  -d "phoneNumber=+254711000000" \
+  -d "networkCode=63902" \
+  -d "retryCount=0"
+```
+
+**Expected Response:**
+```
+OK
+```
+
+**Terminal Output:**
+```
+📩 SMS Delivery Report Received:
+   id: ATXid_abc123
+   status: Success
+   phoneNumber: +254711000000
+   networkCode: 63902
+   retryCount: 0
+```
+
+#### Simulate Incoming Two-way SMS
+
+```bash
+curl -X POST http://localhost:9000/api/sms/twoway \
+  -d "linkId=SLA_abc123" \
+  -d "text=Test message" \
+  -d "to=8995" \
+  -d "id=ATXid_xyz789" \
+  -d "date=2024-01-15 10:30:00" \
+  -d "from=+254711000000"
+```
+
+**Expected Response:**
+```
+GOOD
+```
+
+---
+
+### Testing Voice Endpoints
+
+<Warning>
+  Voice API only works with production credentials. Sandbox accounts don't support Voice functionality.
+</Warning>
+
+#### Check Voice Service Status
+
+```bash
+curl http://localhost:9000/api/voice/
+```
+
+**Expected Response:**
+```json
+{
+  "service": "voice",
+  "status": "ready"
+}
+```
+
+#### Initiate Voice Call
+
+```bash
+curl "http://localhost:9000/api/voice/invoke-call?phone=254711000000"
+```
+
+**Expected Response:**
+```json
+{
+  "message": "Call initiated to +254711000000",
+  "response": {
+    "entries": [
+      {
+        "status": "Queued",
+        "phoneNumber": "+254711000000"
+      }
+    ]
+  }
+}
+```
+
+#### Simulate Voice Instruction Request
+
+```bash
+curl -X POST http://localhost:9000/api/voice/instruct \
+  -d "sessionId=ATVSid_abc123" \
+  -d "callerNumber=+254711000000" \
+  -d "destinationNumber=+254711111111"
+```
+
+**Expected Response (XML):**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>
+</Response>
+```
+
+#### Simulate Voice Event Webhook
+
+```bash
+curl -X POST http://localhost:9000/api/voice/events \
+  -d "sessionId=ATVSid_abc123" \
+  -d "eventType=CallAnswered" \
+  -d "callerNumber=+254711000000" \
+  -d "destinationNumber=+254711111111" \
+  -d "isActive=true"
+```
+
+**Expected Response:**
+```
+OK
+```
+
+---
+
+### Testing Airtime Endpoints
+
+#### Check Airtime Service Status
+
+```bash
+curl http://localhost:9000/api/airtime/
+```
+
+**Expected Response:**
+```json
+{
+  "service": "airtime",
+  "status": "ready"
+}
+```
+
+#### Send Airtime
+
+```bash
+curl "http://localhost:9000/api/airtime/invoke-send-airtime?phone=254711000000&amount=10&currency=KES"
+```
+
+**With Idempotency Key:**
+```bash
+curl "http://localhost:9000/api/airtime/invoke-send-airtime?phone=254711000000&amount=10&currency=KES&idempotencyKey=unique-key-123"
+```
+
+**Expected Response:**
+```json
+{
+  "message": "Airtime sent to +254711000000",
+  "response": {
+    "errorMessage": "None",
+    "numSent": 1,
+    "totalAmount": "KES 10.00",
+    "totalDiscount": "KES 0.06",
+    "responses": [
+      {
+        "phoneNumber": "+254711000000",
+        "amount": "KES 10.00",
+        "discount": "KES 0.06",
+        "status": "Sent",
+        "requestId": "ATQid_abc123"
+      }
+    ]
+  }
+}
+```
+
+#### Simulate Airtime Validation Request
+
+```bash
+curl -X POST http://localhost:9000/api/airtime/validation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionId": "TXN123",
+    "phoneNumber": "+254711000000",
+    "sourceIpAddress": "127.0.0.1",
+    "currencyCode": "KES",
+    "amount": 10.00
+  }'
+```
+
+**Expected Response:**
+```json
+{
+  "status": "Validated"
+}
+```
+
+#### Simulate Airtime Status Callback
+
+```bash
+curl -X POST http://localhost:9000/api/airtime/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phoneNumber": "+254711000000",
+    "description": "Airtime Delivered Successfully",
+    "status": "Success",
+    "requestId": "ATQid_abc123",
+    "discount": "KES 0.06",
+    "value": "KES 10.00"
+  }'
+```
+
+**Expected Response:**
+```
+OK
+```
+
+---
+
+### Testing SIM Swap Endpoints
+
+#### Check SIM Swap Service Status
+
+```bash
+curl http://localhost:9000/api/sim-swap/
+```
+
+**Expected Response:**
+```json
+{
+  "service": "sim-swap",
+  "status": "ready"
+}
+```
+
+#### Check SIM Swap Status
+
+```bash
+curl "http://localhost:9000/api/sim-swap/invoke-check-simswap?phone=254711000000"
+```
+
+#### Simulate SIM Swap Status Callback
+
+```bash
+curl -X POST http://localhost:9000/api/sim-swap/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "Swapped",
+    "lastSimSwapDate": "01-01-1900",
+    "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+    "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+    "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+  }'
+```
+
+---
+
+### Testing USSD Endpoints
+
+#### Check USSD Service Status
+
+```bash
+curl http://localhost:9000/api/ussd/
+```
+
+**Expected Response:**
+```
+Welcome to the USSD service
+```
+
+#### Simulate USSD Session (Initial Request)
+
+```bash
+curl -X POST http://localhost:9000/api/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*384*1234#" \
+  -d "phoneNumber=+254711000000" \
+  -d "text="
+```
+
+**Expected Response:**
+```
+CON What would you want to check 
+1. My Account 
+2. My phone number
+```
+
+#### Simulate USSD Session (User Selection)
+
+```bash
+curl -X POST http://localhost:9000/api/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*384*1234#" \
+  -d "phoneNumber=+254711000000" \
+  -d "text=1"
+```
+
+**Expected Response:**
+```
+CON Choose account information you want to view 
+1. Account number
+```
+
+#### Simulate USSD Session (Final Response)
+
+```bash
+curl -X POST http://localhost:9000/api/ussd/session \
+  -d "sessionId=ATUid_abc123" \
+  -d "serviceCode=*384*1234#" \
+  -d "phoneNumber=+254711000000" \
+  -d "text=1*1"
+```
+
+**Expected Response:**
+```
+END Your account number is ACC1001
+```
+
+---
+
+## Testing with Postman
+
+Postman provides a graphical interface for API testing and is excellent for complex requests.
+
+### Setting Up Postman
+
+<Steps>
+  <Step title="Install Postman">
+    Download and install [Postman](https://www.postman.com/downloads/) for your operating system.
+  </Step>
+
+  <Step title="Create a New Collection">
+    1. Click **Collections** → **Create Collection**
+    2. Name it "Africa's Talking AI Integration"
+  </Step>
+
+  <Step title="Set Up Environment Variables">
+    1. Click **Environments** → **Create Environment**
+    2. Name it "Development"
+    3. Add variables:
+       - `base_url`: `http://localhost:9000`
+       - `tunnel_url`: `https://abc123.ngrok.io` (your ngrok URL)
+       - `phone`: `254711000000` (test phone number)
+  </Step>
+</Steps>
+
+### Creating Test Requests
+
+#### SMS - Send Bulk SMS
+
+1. **Method:** GET
+2. **URL:** `{{base_url}}/api/sms/invoke-bulk-sms`
+3. **Params:**
+   - `phone`: `{{phone}}`
+   - `message`: `Test message from Postman`
+4. Click **Send**
+
+#### SMS - Delivery Report Webhook
+
+1. **Method:** POST
+2. **URL:** `{{base_url}}/api/sms/delivery-reports`
+3. **Body:** `x-www-form-urlencoded`
+   - `id`: `ATXid_test123`
+   - `status`: `Success`
+   - `phoneNumber`: `+{{phone}}`
+   - `networkCode`: `63902`
+   - `retryCount`: `0`
+4. Click **Send**
+
+#### Airtime - Validation (JSON)
+
+1. **Method:** POST
+2. **URL:** `{{base_url}}/api/airtime/validation`
+3. **Headers:**
+   - `Content-Type`: `application/json`
+4. **Body:** `raw` (JSON)
+```json
+{
+  "transactionId": "TXN123",
+  "phoneNumber": "+{{phone}}",
+  "sourceIpAddress": "127.0.0.1",
+  "currencyCode": "KES",
+  "amount": 10.00
+}
+```
+5. Click **Send**
+
+### Postman Collection Export
+
+Save this as `africastalking-tests.postman_collection.json`:
+
+```json
+{
+  "info": {
+    "name": "Africa's Talking AI Integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "SMS",
+      "item": [
+        {
+          "name": "Check Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/sms/"
+          }
+        },
+        {
+          "name": "Send Bulk SMS",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/sms/invoke-bulk-sms?phone={{phone}}&message=Test",
+              "query": [
+                {"key": "phone", "value": "{{phone}}"},
+                {"key": "message", "value": "Test"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Import this into Postman: **Import** → **Upload Files** → Select the JSON file
+
+<Tip>
+  Use Postman's **Tests** tab to write assertions that automatically validate responses:
+  
+  ```javascript
+  pm.test("Status is 200", function () {
+      pm.response.to.have.status(200);
+  });
+  
+  pm.test("Response has service property", function () {
+      var jsonData = pm.response.json();
+      pm.expect(jsonData).to.have.property('service');
+  });
+  ```
+</Tip>
+
+---
+
+## Testing with Browser
+
+Some GET endpoints can be tested directly in your browser.
+
+### SMS Service Status
+
+Navigate to:
+```
+http://localhost:9000/api/sms/
+```
+
+You should see:
+```json
+{"service":"sms","status":"ready"}
+```
+
+### Send Bulk SMS
+
+Navigate to:
+```
+http://localhost:9000/api/sms/invoke-bulk-sms?phone=254711000000&message=Hello%20World
+```
+
+### Voice Call
+
+```
+http://localhost:9000/api/voice/invoke-call?phone=254711000000
+```
+
+<Note>
+  Browser testing only works for GET endpoints. For POST endpoints (webhooks), use curl or Postman.
+</Note>
+
+---
+
+## Testing Webhooks End-to-End
+
+To test the complete webhook flow from Africa's Talking:
+
+<Steps>
+  <Step title="Start Flask Application">
+    ```bash
+    python app.py
+    ```
+    
+    Or using make:
+    ```bash
+    make dev
+    ```
+  </Step>
+
+  <Step title="Start Tunneling Service">
+    ```bash
+    ngrok http 9000
+    ```
+    
+    Note your public URL (e.g., `https://abc123.ngrok.io`)
+  </Step>
+
+  <Step title="Configure Webhooks">
+    Update webhook URLs in Africa's Talking dashboard with your ngrok URL.
+    
+    See [Webhook Configuration guide](/guides/webhook-configuration) for details.
+  </Step>
+
+  <Step title="Trigger an Action">
+    Send an SMS using the Africa's Talking API:
+    
+    ```bash
+    curl "https://abc123.ngrok.io/api/sms/invoke-bulk-sms?phone=254711000000&message=Test"
+    ```
+  </Step>
+
+  <Step title="Monitor Webhooks">
+    1. Watch your terminal for log output
+    2. Check ngrok dashboard at `http://127.0.0.1:4040`
+    3. Verify delivery report webhook was received
+  </Step>
+</Steps>
+
+### Expected Flow
+
+1. **Your request** → Flask app → Africa's Talking API
+2. **Africa's Talking** processes the request
+3. **Delivery report webhook** → ngrok → Flask app
+4. **Your terminal** shows the delivery report log
+
+---
+
+## Debugging Tips
+
+### Enable Verbose Logging
+
+Add more detailed logging to your Flask app:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    logger.debug(f"Headers: {request.headers}")
+    logger.debug(f"Form data: {request.form}")
+    logger.debug(f"Args: {request.args}")
+    
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+    logger.info(f"Payload: {payload}")
+    
+    return "OK", 200
+```
+
+### Using ngrok Inspector
+
+The ngrok web interface (`http://127.0.0.1:4040`) is invaluable:
+
+1. **View all requests** in real-time
+2. **Inspect headers** and payloads
+3. **Replay requests** without triggering new API calls
+4. **Filter requests** by status code or path
+
+<Tip>
+  Click on any request in ngrok inspector to see full details, then click **Replay** to resend it to your local server while debugging.
+</Tip>
+
+### Common Issues and Solutions
+
+#### Issue: "Connection Refused"
+
+**Cause:** Flask app not running or wrong port
+
+**Solution:**
+1. Verify Flask is running: `ps aux | grep python`
+2. Check the port: `lsof -i :9000`
+3. Ensure `PORT` in `.env` matches your curl/ngrok commands
+
+#### Issue: "Authentication Failed"
+
+**Cause:** Invalid API keys
+
+**Solution:**
+1. Verify `.env` file has correct credentials
+2. Check for extra spaces or quotes around keys
+3. Ensure you're using production credentials for Voice API
+
+#### Issue: "Invalid Phone Number"
+
+**Cause:** Incorrect phone number format
+
+**Solution:**
+- Use international format: `254711000000` (without +)
+- The app automatically adds the `+` prefix
+- Don't include spaces or dashes
+
+#### Issue: Webhooks Not Received
+
+**Cause:** Tunnel or webhook configuration issue
+
+**Solution:**
+1. Verify tunnel is running: `curl http://127.0.0.1:4040/api/tunnels`
+2. Check ngrok dashboard for incoming requests
+3. Verify webhook URLs in AT dashboard match your endpoints
+4. Ensure HTTPS is used (not HTTP)
+
+#### Issue: "Method Not Allowed (405)"
+
+**Cause:** Using wrong HTTP method
+
+**Solution:**
+- Check if route accepts the method you're using
+- Webhooks typically use POST, not GET
+- Verify route decorator: `@app.route("/path", methods=["POST"])`
+
+---
+
+## Automated Testing
+
+Create a test script for automated testing:
+
+```bash
+#!/bin/bash
+# test-endpoints.sh
+
+BASE_URL="http://localhost:9000"
+PHONE="254711000000"
+
+echo "Testing SMS endpoints..."
+curl -s "${BASE_URL}/api/sms/" | jq
+
+echo "\nSending bulk SMS..."
+curl -s "${BASE_URL}/api/sms/invoke-bulk-sms?phone=${PHONE}&message=Test" | jq
+
+echo "\nTesting Voice endpoints..."
+curl -s "${BASE_URL}/api/voice/" | jq
+
+echo "\nTesting Airtime endpoints..."
+curl -s "${BASE_URL}/api/airtime/" | jq
+
+echo "\nTesting SIM Swap endpoints..."
+curl -s "${BASE_URL}/api/sim-swap/" | jq
+
+echo "\nAll tests complete!"
+```
+
+Make it executable and run:
+
+```bash
+chmod +x test-endpoints.sh
+./test-endpoints.sh
+```
+
+<Note>
+  This script requires `jq` for JSON formatting. Install with: `brew install jq` (macOS) or `apt install jq` (Linux)
+</Note>
+
+---
+
+## Testing Best Practices
+
+<Warning>
+  **Important Testing Guidelines:**
+  
+  - Always test in sandbox before production
+  - Use test phone numbers (Africa's Talking provides test numbers)
+  - Monitor API costs during testing
+  - Don't spam real phone numbers
+  - Clean up test data regularly
+  - Keep test credentials separate from production
+</Warning>
+
+### Test Data Management
+
+Use consistent test data:
+
+```bash
+# .env.test
+FLASK_ENV=development
+AT_USERNAME=sandbox
+AT_API_KEY=test-key
+TEST_PHONE=254711000000
+TEST_SHORTCODE=8995
+```
+
+### Rate Limiting Awareness
+
+Be aware of rate limits:
+
+- **Sandbox**: Limited to a few requests per minute
+- **Production**: Higher limits, but still enforced
+- **ngrok free**: 40 requests per minute
+
+Pace your tests to avoid hitting limits.
+
+### Continuous Testing
+
+Set up continuous testing:
+
+1. Create a test suite with pytest
+2. Mock Africa's Talking responses
+3. Test webhook handlers in isolation
+4. Run tests in CI/CD pipeline
+
+Example pytest test:
+
+```python
+import pytest
+from app import app
+
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+
+def test_sms_status(client):
+    response = client.get('/api/sms/')
+    assert response.status_code == 200
+    assert response.json['service'] == 'sms'
+    assert response.json['status'] == 'ready'
+
+def test_sms_delivery_report(client):
+    response = client.post('/api/sms/delivery-reports', data={
+        'id': 'ATXid_test',
+        'status': 'Success',
+        'phoneNumber': '+254711000000',
+        'networkCode': '63902'
+    })
+    assert response.status_code == 200
+    assert response.data == b'OK'
+```
+
+Run tests:
+
+```bash
+pytest tests/
+```
+
+---
+
+## Next Steps
+
+After testing your endpoints:
+
+1. Review [API reference documentation](/api/sms-endpoints) for detailed specifications
+2. Implement error handling and retry logic
+3. Set up production monitoring and logging
+4. Deploy your application to a production server
+
+## Additional Resources
+
+- [Africa's Talking API Testing Guide](https://developers.africastalking.com/docs/testing)
+- [Postman Learning Center](https://learning.postman.com/)
+- [curl Documentation](https://curl.se/docs/)
+- [pytest Documentation](https://docs.pytest.org/)

@@ -1,0 +1,311 @@
+---
+title: Environment Setup
+description: Complete guide for setting up environment variables, managing secrets, and configuring your development environment
+---
+
+## Overview
+
+This guide walks you through setting up your development environment for the Africa's Talking AI Integration Course. Proper environment configuration is crucial for secure API key management and smooth development workflow.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- Python 3.8 or higher installed
+- An Africa's Talking account with API credentials
+- A Google Cloud account for AI services (Gemini/Vertex AI)
+- A text editor or IDE for editing configuration files
+
+## Creating the .env File
+
+<Steps>
+  <Step title="Navigate to Project Root">
+    Open your terminal and navigate to the project root directory:
+    
+    ```bash
+    cd Google-Africastalking-AI-Course
+    ```
+  </Step>
+
+  <Step title="Create .env File">
+    Create a new `.env` file in the root directory:
+    
+    ```bash
+    touch .env
+    ```
+    
+    <Note>
+      The `.env` file should never be committed to version control. Ensure it's listed in your `.gitignore` file.
+    </Note>
+  </Step>
+
+  <Step title="Add Required Environment Variables">
+    Open the `.env` file in your text editor and add the following variables:
+    
+    ```bash
+    # Flask Configuration
+    FLASK_ENV=development
+    PORT=9000
+    
+    # Ngrok Configuration (for tunneling)
+    NGROK_AUTHTOKEN=your-ngrok-auth-token-here
+    
+    # Africa's Talking API Credentials
+    AT_USERNAME=your-AT-username-here
+    AT_API_KEY=your-AT-api-key-here
+    AT_VOICE_NUMBER=your-voice-enabled-phone-number
+    AT_SHORTCODE=8995
+    
+    # Google Cloud AI Configuration
+    PROJECT_ID=your-gcp-project-id
+    GEMINI_API_KEY=your-gemini-api-key
+    VERTEX_API_KEY=your-vertex-api-key
+    ```
+  </Step>
+</Steps>
+
+## Environment Variables Explained
+
+### Flask Configuration
+
+| Variable | Purpose | Example Value | Required |
+|----------|---------|---------------|----------|
+| `FLASK_ENV` | Sets the Flask environment mode | `development` or `production` | Yes |
+| `PORT` | Port number for the Flask server | `9000` (default: `5000`) | No |
+
+<Tip>
+  Use `development` mode during development for automatic reloading and detailed error messages. Switch to `production` for deployment.
+</Tip>
+
+### Tunneling Configuration
+
+| Variable | Purpose | Example Value | Required |
+|----------|---------|---------------|----------|
+| `NGROK_AUTHTOKEN` | Authentication token for ngrok | `2abc...xyz` | Yes (if using ngrok) |
+
+<Note>
+  You'll need this to expose your local server to the internet for receiving webhooks from Africa's Talking.
+</Note>
+
+### Africa's Talking Credentials
+
+| Variable | Purpose | Example Value | Required |
+|----------|---------|---------------|----------|
+| `AT_USERNAME` | Your Africa's Talking username | `sandbox` or your app name | Yes |
+| `AT_API_KEY` | Your Africa's Talking API key | `atsk_abc123...` | Yes |
+| `AT_VOICE_NUMBER` | Your voice-enabled phone number | `+254711000000` | For Voice API |
+| `AT_SHORTCODE` | Your SMS shortcode | `8995` | For two-way SMS |
+
+<Warning>
+  **Never share your API keys publicly!** These credentials grant access to your Africa's Talking account and can incur charges.
+</Warning>
+
+#### Getting Africa's Talking Credentials
+
+<Steps>
+  <Step title="Create an Account">
+    Visit [Africa's Talking](https://account.africastalking.com/) and sign up for an account.
+  </Step>
+
+  <Step title="Create a Team and App">
+    - After logging in, create a new team
+    - Inside the team, create a new app
+    - Choose whether to use the sandbox (for testing) or production
+  </Step>
+
+  <Step title="Get API Credentials">
+    - Navigate to your app settings
+    - Find your **Username** (usually "sandbox" for sandbox apps)
+    - Generate or copy your **API Key**
+    - Store these securely in your `.env` file
+  </Step>
+
+  <Step title="Request Product Access">
+    For production use, request access to the services you need:
+    - SMS
+    - Voice (includes a voice-enabled phone number)
+    - Airtime
+    - USSD
+  </Step>
+</Steps>
+
+### Google Cloud AI Configuration
+
+| Variable | Purpose | Example Value | Required |
+|----------|---------|---------------|----------|
+| `PROJECT_ID` | Your Google Cloud project ID | `my-project-123` | For Vertex AI |
+| `GEMINI_API_KEY` | API key for Gemini AI | `AIza...` | For Gemini API |
+| `VERTEX_API_KEY` | API key for Vertex AI | `AIza...` | For Vertex AI |
+
+#### Getting Google Cloud Credentials
+
+<Steps>
+  <Step title="Create Google Cloud Account">
+    Visit [Google Cloud Console](https://cloud.google.com/) and create an account if you don't have one.
+  </Step>
+
+  <Step title="Get Gemini API Key">
+    - Go to [Google AI Studio](https://aistudio.google.com/api-keys)
+    - Create a new API key
+    - Copy the key to your `.env` file as `GEMINI_API_KEY`
+  </Step>
+
+  <Step title="Set Up Vertex AI (Optional)">
+    - Create a new project in Google Cloud Console
+    - Enable the Vertex AI API
+    - Note your project ID and add it to `PROJECT_ID`
+  </Step>
+</Steps>
+
+## Environment Best Practices
+
+### Security Guidelines
+
+<Warning>
+  **Critical Security Practices:**
+  
+  - Never commit `.env` files to Git
+  - Don't share API keys in chat, email, or screenshots
+  - Rotate API keys regularly
+  - Use different credentials for development and production
+  - Restrict API key permissions to only what's needed
+</Warning>
+
+### File Permissions
+
+On Unix-based systems (Linux/macOS), restrict access to your `.env` file:
+
+```bash
+chmod 600 .env
+```
+
+This ensures only you can read and write the file.
+
+### Using .env.example
+
+Create a `.env.example` file to document required variables without exposing secrets:
+
+```bash
+# .env.example
+FLASK_ENV=development
+PORT=9000
+NGROK_AUTHTOKEN=your-ngrok-auth-token-here
+AT_USERNAME=your-AT-username-here
+AT_API_KEY=your-AT-api-key-here
+AT_VOICE_NUMBER=your-voice-enabled-phone-number
+AT_SHORTCODE=8995
+PROJECT_ID=your-gcp-project-id
+GEMINI_API_KEY=your-gemini-api-key
+VERTEX_API_KEY=your-vertex-api-key
+```
+
+<Tip>
+  Commit `.env.example` to your repository as a template for other developers. They can copy it to `.env` and add their own credentials.
+</Tip>
+
+### Verifying Environment Variables
+
+You can verify your environment variables are loaded correctly:
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+print(f"AT_USERNAME: {os.getenv('AT_USERNAME')}")
+print(f"PORT: {os.getenv('PORT')}")
+print(f"FLASK_ENV: {os.getenv('FLASK_ENV')}")
+```
+
+<Note>
+  The project uses `python-dotenv` to automatically load environment variables from the `.env` file when the Flask app starts.
+</Note>
+
+## Environment-Specific Configuration
+
+### Development Environment
+
+```bash
+FLASK_ENV=development
+PORT=9000
+AT_USERNAME=sandbox
+AT_API_KEY=your-sandbox-api-key
+```
+
+**Characteristics:**
+- Uses sandbox credentials
+- Debug mode enabled
+- Detailed error messages
+- Auto-reload on code changes
+
+### Production Environment
+
+```bash
+FLASK_ENV=production
+PORT=5000
+AT_USERNAME=your-production-username
+AT_API_KEY=your-production-api-key
+```
+
+**Characteristics:**
+- Uses production credentials
+- Debug mode disabled
+- Minimal logging
+- Optimized for performance
+
+<Warning>
+  Always test thoroughly in the sandbox environment before deploying to production. Production API calls incur real charges.
+</Warning>
+
+## Troubleshooting
+
+### Environment Variables Not Loading
+
+**Problem:** Your application can't find environment variables.
+
+**Solutions:**
+
+1. Verify the `.env` file is in the project root directory
+2. Check that `dotenv` is installed: `pip install python-dotenv`
+3. Ensure `load_dotenv()` is called before accessing variables
+4. Check for typos in variable names
+
+### API Authentication Failures
+
+**Problem:** Getting authentication errors from Africa's Talking or Google Cloud.
+
+**Solutions:**
+
+1. Verify your API keys are correct (no extra spaces)
+2. Check if you're using sandbox vs. production credentials correctly
+3. Ensure API keys haven't expired or been revoked
+4. Verify you have access to the requested services
+
+### Port Already in Use
+
+**Problem:** Error message: "Address already in use"
+
+**Solutions:**
+
+1. Change the `PORT` variable in `.env` to an unused port
+2. Stop any other applications using the same port
+3. On Unix systems, find and kill the process:
+   ```bash
+   lsof -ti:9000 | xargs kill -9
+   ```
+
+## Next Steps
+
+Now that your environment is configured:
+
+1. [Set up tunneling](/guides/tunneling) to expose your local server
+2. [Configure webhooks](/guides/webhook-configuration) in the Africa's Talking dashboard
+3. [Test your endpoints](/guides/testing) to ensure everything works
+
+## Additional Resources
+
+- [Africa's Talking API Documentation](https://developers.africastalking.com/)
+- [Google Gemini API Quickstart](https://ai.google.dev/gemini-api/docs/quickstart)
+- [Flask Environment Configuration](https://flask.palletsprojects.com/en/latest/config/)
+- [python-dotenv Documentation](https://pypi.org/project/python-dotenv/)

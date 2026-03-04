@@ -1,0 +1,654 @@
+---
+title: Webhook Configuration
+description: Step-by-step guide for configuring webhook callback URLs in the Africa's Talking dashboard for all services
+---
+
+## Overview
+
+Webhooks are HTTP callbacks that Africa's Talking uses to notify your application about events like SMS delivery, incoming messages, voice call events, and more. This guide walks you through configuring webhook URLs for each Africa's Talking service.
+
+## Prerequisites
+
+Before configuring webhooks, ensure you have:
+
+- An Africa's Talking account with an active app
+- Your Flask application running locally (default port: 9000)
+- A tunneling service running (ngrok, cloudflared, or localhost.run)
+- Your public tunnel URL (e.g., `https://abc123.ngrok.io`)
+
+<Note>
+  Make sure your tunnel is running before configuring webhooks. Keep the tunnel running while testing to avoid connection failures.
+</Note>
+
+## Webhook URL Patterns
+
+Based on your Flask application, here are all the webhook endpoints:
+
+### SMS Endpoints
+
+| Endpoint | URL Pattern | Purpose |
+|----------|-------------|----------|
+| Delivery Reports | `/api/sms/delivery-reports` | Receive SMS delivery status updates |
+| Two-way SMS | `/api/sms/twoway` | Receive incoming SMS messages |
+| Opt-out | `/api/sms/opt-out` | Handle SMS unsubscribe requests |
+| Subscription | `/api/sms/subscription` | Handle premium SMS subscriptions |
+
+### Voice Endpoints
+
+| Endpoint | URL Pattern | Purpose |
+|----------|-------------|----------|
+| Call Instructions | `/api/voice/instruct` | Provide call flow instructions (XML) |
+| Voice Events | `/api/voice/events` | Receive call event notifications |
+
+### Airtime Endpoints
+
+| Endpoint | URL Pattern | Purpose |
+|----------|-------------|----------|
+| Validation | `/api/airtime/validation` | Validate airtime requests |
+| Status Callback | `/api/airtime/status` | Receive airtime delivery status |
+
+### SIM Swap Endpoints
+
+| Endpoint | URL Pattern | Purpose |
+|----------|-------------|----------|
+| Status Callback | `/api/sim-swap/status` | Receive SIM swap check results |
+
+### USSD Endpoints
+
+| Endpoint | URL Pattern | Purpose |
+|----------|-------------|----------|
+| Session Callback | `/api/ussd/session` | Handle USSD session interactions |
+| Status Notification | `/api/ussd/status` | Receive session end notifications |
+
+---
+
+## Configuring SMS Webhooks
+
+<Steps>
+  <Step title="Access Your App Settings">
+    1. Log in to [Africa's Talking Dashboard](https://account.africastalking.com/)
+    2. Select your team from the dropdown
+    3. Click on your application (or create a new one)
+    4. Navigate to **SMS** → **Settings**
+  </Step>
+
+  <Step title="Configure Delivery Reports URL">
+    In the **Delivery Report URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/sms/delivery-reports
+    ```
+    
+    **Example:**
+    ```
+    https://abc123.ngrok.io/api/sms/delivery-reports
+    ```
+    
+    This endpoint receives notifications about SMS delivery status (Sent, Delivered, Failed, etc.)
+  </Step>
+
+  <Step title="Configure Two-way SMS URL">
+    In the **Incoming Messages URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/sms/twoway
+    ```
+    
+    **Example:**
+    ```
+    https://abc123.ngrok.io/api/sms/twoway
+    ```
+    
+    This endpoint receives incoming SMS messages sent to your shortcode.
+  </Step>
+
+  <Step title="Configure Opt-out URL (Optional)">
+    If using bulk SMS, set the **Opt-out URL**:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/sms/opt-out
+    ```
+    
+    This receives notifications when users unsubscribe from your messages.
+  </Step>
+
+  <Step title="Configure Subscription URL (Optional)">
+    For premium SMS services, set the **Subscription URL**:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/sms/subscription
+    ```
+    
+    This handles subscription additions and deletions.
+  </Step>
+
+  <Step title="Save Configuration">
+    Click **Save** or **Update** to apply your webhook settings.
+  </Step>
+</Steps>
+
+<Tip>
+  Africa's Talking requires webhook URLs to use **HTTPS**. All tunneling services (ngrok, cloudflared, localhost.run) provide HTTPS URLs automatically.
+</Tip>
+
+### Testing SMS Webhooks
+
+After configuration, test your SMS webhooks:
+
+```bash
+# Send a test SMS (replace with your tunnel URL and phone number)
+curl "https://abc123.ngrok.io/api/sms/invoke-bulk-sms?phone=254711000000&message=Hello+Test"
+```
+
+Check your terminal and ngrok dashboard (`http://127.0.0.1:4040`) to see the delivery report webhook.
+
+---
+
+## Configuring Voice Webhooks
+
+<Warning>
+  **Voice API requires production credentials.** The sandbox doesn't support Voice functionality. You must request and be approved for a production Voice account.
+</Warning>
+
+<Steps>
+  <Step title="Access Voice Settings">
+    1. In your Africa's Talking dashboard, navigate to **Voice** → **Settings**
+    2. Ensure you have a voice-enabled phone number assigned
+  </Step>
+
+  <Step title="Configure Call Instructions URL">
+    In the **Call Instructions URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/voice/instruct
+    ```
+    
+    **Example:**
+    ```
+    https://abc123.ngrok.io/api/voice/instruct
+    ```
+    
+    This endpoint provides XML instructions when a call is answered.
+  </Step>
+
+  <Step title="Configure Event Notification URL">
+    In the **Event Notification URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/voice/events
+    ```
+    
+    **Example:**
+    ```
+    https://abc123.ngrok.io/api/voice/events
+    ```
+    
+    This endpoint receives call event notifications (answered, completed, failed, etc.).
+  </Step>
+
+  <Step title="Save Configuration">
+    Click **Save** to apply your voice webhook settings.
+  </Step>
+
+  <Step title="Note Your Voice Number">
+    Copy your assigned voice number and add it to your `.env` file:
+    
+    ```bash
+    AT_VOICE_NUMBER=+254711000000
+    ```
+  </Step>
+</Steps>
+
+### Testing Voice Webhooks
+
+Test your voice configuration:
+
+```bash
+# Initiate a test call (replace with your tunnel URL and phone number)
+curl "https://abc123.ngrok.io/api/voice/invoke-call?phone=254711000000"
+```
+
+When the call is answered, Africa's Talking will request instructions from your `/api/voice/instruct` endpoint.
+
+### Voice Instructions Response Format
+
+Your `/api/voice/instruct` endpoint must return XML:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Welcome to the service. This is a demo voice application. Goodbye.</Say>
+</Response>
+```
+
+See the [Voice API reference](/api/voice-endpoints) for more XML actions.
+
+---
+
+## Configuring Airtime Webhooks
+
+<Steps>
+  <Step title="Access Airtime Settings">
+    Navigate to **Airtime** → **Settings** in your Africa's Talking dashboard.
+  </Step>
+
+  <Step title="Configure Validation URL">
+    In the **Validation URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/airtime/validation
+    ```
+    
+    This endpoint validates airtime requests before they're processed.
+  </Step>
+
+  <Step title="Configure Status Callback URL">
+    In the **Status Callback URL** field, enter:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/airtime/status
+    ```
+    
+    This receives airtime delivery status notifications.
+  </Step>
+
+  <Step title="Save Configuration">
+    Click **Save** to apply the settings.
+  </Step>
+</Steps>
+
+### Testing Airtime Webhooks
+
+```bash
+# Send test airtime (sandbox won't actually send, but will trigger callbacks)
+curl "https://abc123.ngrok.io/api/airtime/invoke-send-airtime?phone=254711000000&amount=10&currency=KES"
+```
+
+### Validation Endpoint Request Format
+
+Your validation endpoint receives:
+
+```json
+{
+  "transactionId": "SomeTransactionID",
+  "phoneNumber": "+254711XXXYYY",
+  "sourceIpAddress": "127.12.32.24",
+  "currencyCode": "KES",
+  "amount": 500.00
+}
+```
+
+Respond with:
+
+```json
+{
+  "status": "Validated"  // or "Failed"
+}
+```
+
+### Status Callback Request Format
+
+Your status endpoint receives:
+
+```json
+{
+  "phoneNumber": "+254711XXXYYY",
+  "description": "Airtime Delivered Successfully",
+  "status": "Success",
+  "requestId": "ATQid_SampleTxnId123",
+  "discount": "KES 0.6000",
+  "value": "KES 100.0000"
+}
+```
+
+---
+
+## Configuring SIM Swap Webhooks
+
+<Steps>
+  <Step title="Access SIM Swap Settings">
+    Navigate to your SIM Swap service settings in the Africa's Talking dashboard.
+  </Step>
+
+  <Step title="Configure Status Callback URL">
+    Set the callback URL to:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/sim-swap/status
+    ```
+  </Step>
+
+  <Step title="Save Configuration">
+    Click **Save** to apply.
+  </Step>
+</Steps>
+
+### Testing SIM Swap Webhooks
+
+```bash
+# Check SIM swap status
+curl "https://abc123.ngrok.io/api/sim-swap/invoke-check-simswap?phone=254711000000"
+```
+
+### Status Callback Format
+
+```json
+{
+  "status": "Swapped",
+  "lastSimSwapDate": "01-01-1900",
+  "providerRefId": "fe3b-46fd-931c-b2ef3a64da93311064104",
+  "requestId": "ATSwpid_4032b7bfddd5fdca0c401184a84cbb0d",
+  "transactionId": "738e202b-ea2f-43e5-b451-a85334e90fb5"
+}
+```
+
+---
+
+## Configuring USSD Webhooks
+
+<Steps>
+  <Step title="Access USSD Settings">
+    Navigate to **USSD** → **Settings** in your dashboard.
+  </Step>
+
+  <Step title="Configure Session Callback URL">
+    Set your USSD callback URL to:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/ussd/session
+    ```
+    
+    This endpoint handles USSD session interactions.
+  </Step>
+
+  <Step title="Configure Status Notification URL">
+    Set the status notification URL to:
+    
+    ```
+    https://your-tunnel-url.ngrok.io/api/ussd/status
+    ```
+    
+    This receives end-of-session notifications.
+  </Step>
+
+  <Step title="Note Your USSD Code">
+    Copy your assigned USSD code (e.g., `*384*1234#`) for testing.
+  </Step>
+</Steps>
+
+### USSD Response Format
+
+Your USSD session endpoint must return text responses:
+
+```python
+# Continue session
+response = "CON What would you want to check \n"
+response += "1. My Account \n"
+response += "2. My phone number"
+
+# End session
+response = "END Your phone number is +254711000000"
+```
+
+- `CON` - Continue the session (show menu)
+- `END` - End the session (final message)
+
+---
+
+## Webhook Security Best Practices
+
+<Warning>
+  **Critical Security Considerations:**
+  
+  - Always use HTTPS for webhook URLs
+  - Validate incoming webhook requests
+  - Log all webhook payloads for debugging
+  - Implement rate limiting to prevent abuse
+  - Never expose sensitive data in responses
+</Warning>
+
+### Validating Webhook Sources
+
+Add validation to ensure requests come from Africa's Talking:
+
+```python
+from flask import request, abort
+
+def verify_africastalking_webhook():
+    # Check user agent
+    user_agent = request.headers.get('User-Agent', '')
+    if 'AfricasTalking' not in user_agent:
+        abort(403)  # Forbidden
+    
+    # Additional validation logic here
+    # E.g., check IP addresses, verify signatures, etc.
+```
+
+### Logging Webhook Payloads
+
+The application already logs webhooks, but you can enhance logging:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+    
+    logger.info(f"SMS Delivery Report: {payload}")
+    
+    # Process the payload
+    return "OK", 200
+```
+
+---
+
+## Monitoring Webhooks with ngrok
+
+ngrok's web interface (`http://127.0.0.1:4040`) is invaluable for debugging webhooks:
+
+### Accessing the Dashboard
+
+1. Ensure ngrok is running
+2. Open `http://127.0.0.1:4040` in your browser
+3. View all incoming requests in real-time
+
+### Features
+
+- **Request inspection**: See headers, body, and query parameters
+- **Response inspection**: View your application's responses
+- **Replay requests**: Resend previous requests for testing
+- **Filter and search**: Find specific webhook calls
+
+<Tip>
+  Use the ngrok dashboard to replay webhook requests while debugging. This saves time by not having to trigger new SMS/calls for each test.
+</Tip>
+
+---
+
+## Troubleshooting Webhooks
+
+### Webhooks Not Received
+
+**Problem:** Africa's Talking sends webhooks but your application doesn't receive them.
+
+**Solutions:**
+
+1. **Verify tunnel is running**:
+   ```bash
+   # Check ngrok status
+   curl http://127.0.0.1:4040/api/tunnels
+   ```
+
+2. **Check webhook URL configuration**:
+   - Ensure URLs in dashboard exactly match your endpoints
+   - Verify HTTPS is used
+   - Check for typos in paths
+
+3. **Test endpoint directly**:
+   ```bash
+   curl https://abc123.ngrok.io/api/sms/delivery-reports
+   ```
+
+4. **Check ngrok dashboard** for incoming requests at `http://127.0.0.1:4040`
+
+### 404 Not Found Errors
+
+**Problem:** Webhooks return 404 errors.
+
+**Solutions:**
+
+1. Verify route paths in your Flask application match webhook URLs
+2. Check that blueprints are registered correctly
+3. Ensure Flask app is running
+
+### 405 Method Not Allowed
+
+**Problem:** Webhook returns 405 error.
+
+**Solutions:**
+
+1. Ensure your route accepts POST requests:
+   ```python
+   @sms_bp.route("/delivery-reports", methods=["POST"])
+   ```
+
+2. Africa's Talking sends most webhooks via POST, not GET
+
+### Timeouts
+
+**Problem:** Africa's Talking times out waiting for your response.
+
+**Solutions:**
+
+1. Respond quickly (within 10 seconds)
+2. Process heavy tasks asynchronously
+3. Return "OK" immediately, then process in background
+
+```python
+@sms_bp.route("/delivery-reports", methods=["POST"])
+def sms_delivery_report():
+    payload = {key: request.values.get(key) for key in request.values.keys()}
+    
+    # Log immediately
+    print(f"Received: {payload}")
+    
+    # TODO: Queue for background processing
+    
+    # Return quickly
+    return "OK", 200
+```
+
+### Invalid Responses
+
+**Problem:** Webhooks fail due to invalid response format.
+
+**Solutions:**
+
+1. **Voice endpoints** must return XML with `text/plain` mimetype:
+   ```python
+   return Response(xml_response, mimetype="text/plain")
+   ```
+
+2. **USSD endpoints** must return plain text starting with `CON` or `END`:
+   ```python
+   return "CON Welcome\n1. Option 1"
+   ```
+
+3. **Other webhooks** should return `"OK"` with status 200:
+   ```python
+   return "OK", 200
+   ```
+
+---
+
+## Testing Webhook Configuration
+
+After configuring all webhooks, run comprehensive tests:
+
+### 1. Test All Endpoints
+
+```bash
+# Replace abc123.ngrok.io with your tunnel URL
+BASE_URL="https://abc123.ngrok.io"
+
+# SMS
+curl "${BASE_URL}/api/sms/invoke-bulk-sms?phone=254711000000&message=Test"
+
+# Voice
+curl "${BASE_URL}/api/voice/invoke-call?phone=254711000000"
+
+# Airtime
+curl "${BASE_URL}/api/airtime/invoke-send-airtime?phone=254711000000&amount=10"
+
+# SIM Swap
+curl "${BASE_URL}/api/sim-swap/invoke-check-simswap?phone=254711000000"
+```
+
+### 2. Verify Webhook Receipts
+
+Check your terminal for log output and ngrok dashboard for incoming webhooks.
+
+### 3. Test Error Handling
+
+Send invalid requests to ensure error handling works:
+
+```bash
+# Missing required parameter
+curl "${BASE_URL}/api/sms/invoke-bulk-sms?message=Test"
+```
+
+Expected response:
+```json
+{
+  "error": "Missing 'phone' query parameter"
+}
+```
+
+---
+
+## Production Considerations
+
+<Warning>
+  When deploying to production:
+  
+  - Replace tunnel URLs with your actual domain
+  - Use production Africa's Talking credentials
+  - Implement proper authentication and validation
+  - Add rate limiting and request throttling
+  - Set up monitoring and alerting
+  - Use a robust web server (Gunicorn, uWSGI)
+  - Enable HTTPS with valid SSL certificates
+</Warning>
+
+### Example Production URLs
+
+Instead of:
+```
+https://abc123.ngrok.io/api/sms/delivery-reports
+```
+
+Use:
+```
+https://api.yourdomain.com/api/sms/delivery-reports
+```
+
+---
+
+## Next Steps
+
+Now that your webhooks are configured:
+
+1. [Test your endpoints](/guides/testing) thoroughly with various scenarios
+2. Implement error handling and retry logic
+3. Set up logging and monitoring
+4. Review the [API reference](/api/sms-endpoints) for detailed webhook payload formats
+
+## Additional Resources
+
+- [Africa's Talking Webhooks Documentation](https://developers.africastalking.com/docs/webhooks)
+- [SMS API Documentation](https://developers.africastalking.com/docs/sms/overview)
+- [Voice API Documentation](https://developers.africastalking.com/docs/voice/overview)
+- [Airtime API Documentation](https://developers.africastalking.com/docs/airtime/overview)
